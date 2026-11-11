@@ -145,12 +145,14 @@ tr:last-child td{border-bottom:0}
 
 /* widgets do topo do Painel */
 .wg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:26px}
-.w{background:var(--surface);border-radius:22px;padding:14px 16px;min-height:148px;display:flex;flex-direction:column;min-width:0}
-.w .k{display:flex;align-items:center;gap:6px;font-size:.82rem;font-weight:600;color:var(--accent)}
+.w{background:var(--surface);border-radius:22px;padding:14px 16px;min-height:112px;display:flex;flex-direction:column;min-width:0}
+.w .k{display:flex;align-items:center;gap:6px;white-space:nowrap;font-size:.82rem;font-weight:600;color:var(--accent)}
 .w b{font-family:var(--f-display);font-size:1.25rem;font-weight:700;letter-spacing:-.02em;line-height:1.15;margin-top:auto;overflow-wrap:anywhere;text-wrap:balance}
 .w p{margin:3px 0 0;font-size:.84rem;color:var(--muted);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.w .gr{font-family:var(--f-num);font-size:2.75rem;font-weight:700;letter-spacing:-.02em;line-height:1;margin-top:auto;font-variant-numeric:tabular-nums}
+.w .gr{font-family:var(--f-num);font-size:2.25rem;font-weight:700;letter-spacing:-.02em;line-height:1;margin-top:auto;font-variant-numeric:tabular-nums}
 .w .gr i{font-style:normal;font-family:var(--f-body);font-size:1.0625rem;font-weight:600;color:var(--muted);letter-spacing:-.01em;margin-left:4px}
+.w.vazio{min-height:0}
+.w.vazio b{margin-top:10px;font-size:1.0625rem}
 .w.tinta{background:linear-gradient(160deg,#a42d4d,#6f1a31);color:#fff}
 .w.tinta .k,.w.tinta p{color:rgba(255,255,255,.82)}
 
@@ -209,7 +211,8 @@ button.mi-folga,button.mi-folga:hover{background:var(--warn-bg);color:var(--warn
 .stats{display:flex;gap:18px 22px;flex-wrap:wrap}
 .stat .label{text-transform:none;letter-spacing:0;font-size:.84rem}
 .stat .v{font-family:var(--f-num);font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
-#tema{font-size:1.2rem;line-height:1}
+#tema{display:inline-flex;align-items:center;justify-content:center;min-width:44px}
+#tema svg{width:22px;height:22px}
 .evols{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px 22px}
 .evol{margin:0}
 .evol figcaption{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:4px}
@@ -827,11 +830,11 @@ function vPainel(){
   const agora = new Date().toTimeString().slice(0,5);
   const prox = blocos.find(b => (b.fim || b.inicio || "") > agora), pc = proximas[0], dpc = pc ? Math.max(0, diasAte(pc.data)) : 0;
   const widgets = `<div class="wg">
-    <div class="w tinta"><span class="k">${ICO.relogio}${prox ? ((prox.inicio || "") <= agora ? "Agora" : prox.tipo === "aula" ? "Próxima aula" : "A seguir") : "Hoje"}</span>
+    <div class="w tinta ${!prox && !blocos.length && !pc ? "vazio" : ""}"><span class="k">${ICO.relogio}${prox ? ((prox.inicio || "") <= agora ? "Agora" : prox.tipo === "aula" ? "Próxima aula" : "A seguir") : "Hoje"}</span>
       <b>${prox ? esc(nomeDe(prox.materiaId)) : blocos.length ? "Aulas encerradas" : "Dia livre"}</b>
-      <p>${prox ? `${esc(prox.inicio||"")} – ${esc(prox.fim||"")}` : blocos.length ? "Nada mais por hoje" : "Nada marcado para hoje"}</p></div>
-    <div class="w"><span class="k">${ICO[pc ? pc.tipo : "prova"]}Próximo prazo</span>
-      ${pc ? `<div class="gr">${dpc === 0 ? "Hoje" : dpc}${dpc === 0 ? "" : `<i>${dpc === 1 ? "dia" : "dias"}</i>`}</div><p>${pc.t} · ${pc.sub.split(" · ")[0]}</p>` : `<b>Tudo em dia</b><p>Nenhuma prova ou entrega à frente</p>`}</div>
+      <p>${prox ? `${esc(prox.inicio||"")} – ${esc(prox.fim||"")}` : blocos.length ? "Nada mais por hoje" : "Nada marcado"}</p></div>
+    <div class="w ${!pc && !prox && !blocos.length ? "vazio" : ""}"><span class="k">${ICO[pc ? pc.tipo : "prova"]}Próximo prazo</span>
+      ${pc ? `<div class="gr">${dpc === 0 ? "Hoje" : dpc}${dpc === 0 ? "" : `<i>${dpc === 1 ? "dia" : "dias"}</i>`}</div><p>${pc.t} · ${pc.sub.split(" · ")[0]}</p>` : `<b>Tudo em dia</b><p>Nada à frente</p>`}</div>
   </div>`;
   const linhasMat = S.materias.map(m => {
     const n = resumoNotas(m.id), f = resumoFaltas(m.id);
@@ -1888,7 +1891,10 @@ function abrirBusca(){
 
 /* ---------- tema claro/escuro ---------- */
 // Automático segue o tema do celular ou computador. Claro e Escuro fixam a escolha neste aparelho.
-const LS_TEMA = "meu-semestre-tema", TEMAS = [["", "automático", "◐"], ["light", "claro", "☀"], ["dark", "escuro", "☾"]];
+const LS_TEMA = "meu-semestre-tema", TEMAS = [
+  ["", "automático", svgI('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor"/>')],
+  ["light", "claro", svgI('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>')],
+  ["dark", "escuro", svgI('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>')]];
 let tema = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; } catch(e){}
 const corBarra = document.querySelectorAll('meta[name="theme-color"]'), corOriginal = [...corBarra].map(m => m.content);
 function aplicarTema(){
@@ -1896,8 +1902,8 @@ function aplicarTema(){
   if (valor) document.documentElement.dataset.theme = valor;
   else if (FORA_DO_CLAUDE) delete document.documentElement.dataset.theme;
   // cor da barra do navegador e do app instalado
-  corBarra.forEach((m, i) => m.content = valor ? (valor === "dark" ? "#141a27" : "#ffffff") : corOriginal[i]);
-  const b = $("#tema"); b.textContent = icone; b.setAttribute("aria-label", "Tema: " + nome); b.title = "Tema: " + nome + " (toque para trocar)";
+  corBarra.forEach((m, i) => m.content = valor ? (valor === "dark" ? "#000000" : "#f2f2f7") : corOriginal[i]);
+  const b = $("#tema"); b.innerHTML = icone; b.setAttribute("aria-label", "Tema: " + nome); b.title = "Tema: " + nome + " (toque para trocar)";
   return nome;
 }
 $("#tema").onclick = () => {
