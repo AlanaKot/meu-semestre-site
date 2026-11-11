@@ -51,7 +51,7 @@ h1 mark{background:var(--accent);color:var(--accent-ink);padding:0 .15em;border-
 nav{display:flex;gap:4px;overflow-x:auto;padding-block:4px 0;scrollbar-width:none}
 nav a{padding:10px 12px;color:var(--muted);text-decoration:none;font-weight:500;white-space:nowrap;border-bottom:3px solid transparent}
 nav.mais{-webkit-mask-image:linear-gradient(to right,#000 82%,transparent);mask-image:linear-gradient(to right,#000 82%,transparent)}
-@media (max-width:480px){nav{gap:0}nav a{padding:12px 5px;font-size:.9rem}nav .lg{display:none}}
+@media (max-width:480px){nav{gap:0}nav a{flex:1 0 auto;text-align:center;padding:13px 4px;font-size:.9rem}nav a[aria-current="page"]{font-weight:600}nav .lg{display:none}}
 .erro{color:var(--bad);font-size:.9rem;font-weight:500;margin:0}
 nav a[aria-current="page"]{color:var(--fg);border-bottom-color:var(--accent)}
 nav a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
