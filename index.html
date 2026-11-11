@@ -176,6 +176,9 @@ textarea{min-height:70px;resize:vertical}
 .faltei input.qtd{width:64px;text-align:center;flex:none}
 .notas{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:8px;margin-top:auto}
 .notas>button{align-self:flex-start;margin-left:-8px}
+.tarefa{padding:6px 0;gap:8px}
+.tarefa .est{flex:1;min-width:0;padding:0}
+.tarefa .t{font-weight:500;overflow-wrap:anywhere}
 .links{display:flex;flex-wrap:wrap;gap:6px}
 .links a{color:var(--accent);font-weight:500;font-size:.88rem;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .links a:hover{border-color:var(--accent)}
@@ -230,12 +233,12 @@ textarea{min-height:70px;resize:vertical}
 const DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
-const COLS = ["materias","cronograma","faltas","provas","eventos"];
+const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas"];
 const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], config:{ mediaMin:6, freqMin:75 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], config:{ mediaMin:6, freqMin:75 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -494,6 +497,7 @@ function vPainel(){
         : `<p class="empty">Nenhuma prova, entrega ou evento à frente.</p>`}
     </section>
   </div>
+  ${painelTarefas()}
   ${painelPlano()}
   <section class="panel" style="margin-top:18px">
     <div class="bar" style="margin-bottom:8px"><h3>Situação por matéria</h3><span class="need">Média mínima <b class="num">${fmt(S.config.mediaMin)}</b> · frequência mínima <b class="num">${S.config.freqMin}%</b> <button class="ghost" id="cfg">Ajustar</button></span></div>
@@ -620,8 +624,41 @@ function vMaterias(){
       <div class="stats"><div class="stat"><div class="label">Média</div><div class="v">${fmt(n.media)}</div></div>
         <div class="stat"><div class="label">Faltas</div><div class="v">${f.total}${f.limite!=null?`<span class="need">/${f.limite}</span>`:""}</div></div>
         <div class="stat"><div class="label">Aulas</div><div class="v">${num(m.cargaHoraria)??"—"}</div></div></div>
+      ${blocoTarefas(m)}
       ${blocoNotas(m)}
     </div>`; }).join("") || '<p class="empty">Comece cadastrando as matérias do semestre.</p>'}</div>`;
+}
+
+/* ---------- tarefas ---------- */
+// pendentes primeiro, por prazo (sem prazo vai para o fim); feitas por último
+const ordemTarefas = l => [...l].sort((a,b) => (a.feita?1:0) - (b.feita?1:0) || (a.data||"9").localeCompare(b.data||"9"));
+function linhaTarefa(t, comMateria){
+  const atrasada = !t.feita && t.data && diasAte(t.data) < 0;
+  const prazo = t.feita || !t.data ? "" : atrasada ? '<span class="chip bad">atrasada</span>' : diasAte(t.data) === 0 ? '<span class="chip bad">hoje</span>' : chipPrazo(t.data);
+  const sub = [comMateria ? `<span class="dot" style="background:${esc(corDe(t.materiaId))}"></span> ${esc(nomeDe(t.materiaId))}` : "", t.data ? "até "+fmtData(t.data) : ""].filter(Boolean).join(" · ");
+  return `<div class="row tarefa"><label class="est"><input type="checkbox" data-tarefa="${t.id}" ${t.feita?"checked":""} aria-label="Feita: ${esc(t.titulo)}">
+      <span><span class="t">${esc(t.titulo)}</span>${exTag(t)}${sub?`<span class="m" style="display:block">${sub}</span>`:""}</span></label>
+    ${prazo}<button class="ghost" data-edit="tarefas" data-id="${t.id}" aria-label="Editar ${esc(t.titulo)}">Editar</button></div>`;
+}
+function painelTarefas(){
+  const pend = ordemTarefas(S.tarefas.filter(t => !t.feita && mat(t.materiaId)));
+  const mostra = pend.slice(0, 8);
+  return `<section class="panel" style="margin-top:18px">
+    <div class="bar" style="margin-bottom:8px"><h3 style="margin:0">Tarefas</h3><button class="ghost" data-novo="tarefas">+ Tarefa</button></div>
+    ${mostra.length ? `<div class="list">${mostra.map(t => linhaTarefa(t, true)).join("")}</div>${pend.length > mostra.length ? `<p class="need">E mais ${pend.length - mostra.length} na aba Matérias.</p>` : ""}`
+      : '<p class="empty">Nenhuma tarefa pendente.</p>'}
+  </section>`;
+}
+function blocoTarefas(m){
+  const ts = ordemTarefas(S.tarefas.filter(t => t.materiaId === m.id)), feitas = ts.filter(t => t.feita).length;
+  return `<div class="notas"><div class="bar" style="margin:0"><span class="label">Tarefas${ts.length ? ` · ${feitas} de ${ts.length} feitas` : ""}</span>
+      <button class="ghost" data-novo="tarefas" data-mat="${m.id}">+ Tarefa</button></div>
+    ${ts.length ? `<div class="list">${ts.map(t => linhaTarefa(t, false)).join("")}</div>` : ""}</div>`;
+}
+async function marcarTarefa(id, feita){
+  const t = S.tarefas.find(x => x.id === id); if (!t) return;
+  const { id:_, ...resto } = t;
+  await salvar("tarefas", id, { ...resto, feita });
 }
 
 /* ---------- anotações e links ---------- */
@@ -694,6 +731,11 @@ const FORMS = {
     {k:"titulo",l:"Nome do evento",t:"text",req:1,ph:"Ex.: Semana do Contador"},
     {duo:[{k:"data",l:"Dia",t:"date",def:hojeISO},{k:"dataFim",l:"Até (opcional)",t:"date"}]},
     {k:"obs",l:"Observação",t:"text"} ]},
+  tarefas: { titulo:"Tarefa", campos:[
+    {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
+    {k:"titulo",l:"O que fazer",t:"text",req:1,ph:"Ex.: Lista 3, ler capítulo 2"},
+    {k:"data",l:"Prazo (opcional)",t:"date"},
+    {k:"feita",l:"Já está feita",t:"check"} ]},
   provas: { titulo:"Prova ou trabalho", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
     {k:"titulo",l:"Título",t:"text",req:1,ph:"Ex.: P1, Trabalho final"},
@@ -770,7 +812,7 @@ function abrirForm(col, id, preset={}){
   $("#cancel").onclick = () => $("#dlg").close();
   const del = $("#del");
   // apagar uma matéria leva junto os blocos, faltas e provas dela
-  const deps = col==="materias" ? ["cronograma","faltas","provas"].flatMap(c => S[c].filter(x => x.materiaId === id).map(x => [c, x.id])) : [];
+  const deps = col==="materias" ? ["cronograma","faltas","provas","tarefas"].flatMap(c => S[c].filter(x => x.materiaId === id).map(x => [c, x.id])) : [];
   if (del) del.onclick = async () => {
     if (del.dataset.arm){
       del.disabled = true;
@@ -916,7 +958,7 @@ function abrirNovoSemestre(){
     const manter = new Set([...frm.querySelectorAll('input[name="manter"]:checked')].map(i => i.value));
     const sai = S.materias.filter(m => !manter.has(m.id)).map(m => m.id);
     const lista = [
-      ...["cronograma","faltas","provas"].flatMap(c => S[c].filter(x => sai.includes(x.materiaId) || !mat(x.materiaId)).map(x => [c, x.id])),
+      ...["cronograma","faltas","provas","tarefas"].flatMap(c => S[c].filter(x => sai.includes(x.materiaId) || !mat(x.materiaId)).map(x => [c, x.id])),
       ...S.eventos.filter(e => diasAte(e.dataFim || e.data || hojeISO()) < 0).map(e => ["eventos", e.id]),
       ...sai.map(id => ["materias", id]),
     ];
@@ -942,7 +984,7 @@ function abrirNovoSemestre(){
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
-    <p class="need">Baixe um arquivo com matérias, cronograma, faltas e notas. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
+    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas e tarefas. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label><input type="file" id="bkFile" accept=".json,application/json"><span class="need">Junta com o que já existe; itens com o mesmo código são substituídos.</span></div>
     <div class="actions"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
@@ -1025,7 +1067,7 @@ window.addEventListener("resize", navFade);
 
 $("#view").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.novo) abrirForm(b.dataset.novo, null, { ...(b.dataset.dia!=null ? {dia:b.dataset.dia} : {}), ...(b.dataset.data ? {data:b.dataset.data} : {}) });
+  if (b.dataset.novo) abrirForm(b.dataset.novo, null, { ...(b.dataset.mat ? {materiaId:b.dataset.mat} : {}), ...(b.dataset.dia!=null ? {dia:b.dataset.dia} : {}), ...(b.dataset.data ? {data:b.dataset.data} : {}) });
   else if (b.dataset.vis){ visCron = b.dataset.vis; try { localStorage.setItem("meu-semestre-vis", visCron); } catch(e){} render(); }
   else if (b.dataset.mes){ const n = +b.dataset.mes, h = new Date(); mesRef = n ? new Date(mesRef.getFullYear(), mesRef.getMonth()+n, 1) : new Date(h.getFullYear(), h.getMonth(), 1); render(); }
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
@@ -1045,6 +1087,7 @@ $("#view").addEventListener("click", async e => {
 });
 $("#view").addEventListener("change", e => {
   if (e.target.id==="fProva"){ filtroProvas = e.target.value; render(); }
+  else if (e.target.dataset.tarefa) marcarTarefa(e.target.dataset.tarefa, e.target.checked);
   else if (e.target.dataset.estudo) marcarEstudo(e.target.dataset.estudo, e.target.dataset.dia, e.target.checked);
 });
 window.addEventListener("hashchange", render);
