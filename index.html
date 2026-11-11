@@ -11,13 +11,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Semestre">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+// aplica o tema escolhido antes de desenhar a página, para não piscar claro
+try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch(e){}
+</script>
 <style>
 /* Visual no padrão dos apps do iPhone: título grande, listas agrupadas em quadros sobre fundo cinza,
    barra de abas embaixo no celular (pílula flutuante no topo em telas largas) e o bordô como cor do app. */
 :root{
   --bg:#f2f2f7; --surface:#ffffff; --surface-2:#e9e9ee; --line:rgba(60,60,67,.2);
   --fg:#000000; --muted:#6c6c70; --ink:#8e8e93;
-  --accent:#8f2440; --accent-fill:#8f2440; --accent-ink:#ffffff; --accent-bg:rgba(143,36,64,.12);
+  --accent:#8f2440; --accent-fill:#8f2440; --accent-ink:#ffffff; --accent-bg:rgba(143,36,64,.12); --accent-txt:#8f2440;
   --fill:rgba(118,118,128,.12); --fill-2:rgba(118,118,128,.24);
   --barra:rgba(249,249,249,.82); --folha:#f2f2f7; --campo:#ffffff;
   --ok:#1a7f3c; --warn:#946200; --bad:#c9281e;
@@ -30,7 +34,7 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2);
+  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2); --accent-txt:#e8607f;
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -38,7 +42,7 @@
 :root[data-theme="dark"]{
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2);
+  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2); --accent-txt:#e8607f;
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -155,8 +159,9 @@ tr:last-child td{border-bottom:0}
 .day{background:var(--surface);border-radius:var(--r);padding:10px;min-height:120px;display:flex;flex-direction:column;gap:6px}
 .day h3{font-size:1.0625rem;display:flex;justify-content:space-between;align-items:center;padding-left:4px}
 .day h3 button{font-size:1.4rem;line-height:1;padding:2px 8px;font-weight:300}
-.day.today h3 span{color:var(--accent)}
-.day.today h3 span::after{content:"hoje";margin-left:8px;font:600 .72rem var(--f-body);letter-spacing:0;padding:2px 8px;border-radius:999px;background:var(--accent-bg);vertical-align:2px}
+.day h3 .need{font-weight:400;font-size:.84rem;letter-spacing:0}
+.day.today h3>span{color:var(--accent)}
+.day.today h3>span::after{content:"hoje";margin-left:8px;font:600 .72rem var(--f-body);letter-spacing:0;padding:2px 8px;border-radius:999px;background:var(--accent-bg);vertical-align:2px}
 .blk{background:color-mix(in srgb,var(--c,var(--ink)) 14%,var(--surface));color:var(--fg);border-radius:8px;padding:7px 10px 7px 13px;font-size:.9rem;font-weight:400;text-align:left;width:100%;position:relative;overflow:hidden}
 .blk::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--c,var(--ink))}
 .blk:hover{background:color-mix(in srgb,var(--c,var(--ink)) 22%,var(--surface))}
@@ -186,6 +191,11 @@ tr:last-child td{border-bottom:0}
 button.mi-prova,button.mi-prova:hover{background:var(--accent-fill);color:var(--accent-ink)}
 button.mi-entrega,button.mi-entrega:hover{border-color:var(--accent);background:transparent;color:var(--accent)}
 button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
+button.mi-folga,button.mi-folga:hover{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.mc.folga{background:color-mix(in srgb,var(--warn-bg) 55%,var(--surface))}
+.chip.folga{background:var(--warn-bg);color:var(--warn);white-space:normal}
+.leg-folga{background:var(--warn-bg)}
+.blk.cancelada{opacity:.55;text-decoration:line-through}
 .mi:hover{filter:brightness(.94)}
 .leg{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin:0 4px 26px}
 .leg span{display:inline-flex;align-items:center;gap:6px}
@@ -199,6 +209,23 @@ button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
 .stats{display:flex;gap:18px 22px;flex-wrap:wrap}
 .stat .label{text-transform:none;letter-spacing:0;font-size:.84rem}
 .stat .v{font-family:var(--f-num);font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
+#tema{font-size:1.2rem;line-height:1}
+.evols{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px 22px}
+.evol{margin:0}
+.evol figcaption{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:4px}
+.evol svg{width:100%;height:auto;display:block;overflow:visible}
+.evol .grade{stroke:var(--line);stroke-width:1}
+.evol .minima{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.evol .eixo{fill:var(--muted);font:11px var(--f-body)}
+.evol .eixo.min{fill:var(--fg);font-weight:600}
+.evol .alvo{fill:transparent;cursor:pointer;outline:none}
+.evol .alvo:focus-visible{stroke:var(--accent);stroke-width:2}
+section:has(.evols){position:relative}
+.dica{position:absolute;z-index:3;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.8rem;padding:4px 8px;border-radius:8px;white-space:nowrap}
+.achado{width:100%;text-align:left;background:none;border:0;border-bottom:.5px solid var(--line);border-radius:0;color:inherit;font:inherit;cursor:pointer;min-height:44px}
+.achado:hover{background:var(--fill)}
+.achado mark{background:var(--warn-bg);color:inherit;border-radius:2px;padding:0 1px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .foco{display:flex;gap:12px 18px;align-items:flex-end;flex-wrap:wrap;justify-content:space-between}
 .foco .relogio{font-family:var(--f-num);font-size:3rem;font-weight:700;line-height:1;color:var(--accent);letter-spacing:-.02em}
 .big{font-family:var(--f-num);font-weight:700;font-size:1.25rem;font-variant-numeric:tabular-nums}
@@ -288,6 +315,10 @@ textarea{min-height:76px;resize:vertical}
   nav svg{display:block;width:26px;height:26px}
   nav a[aria-current="page"] svg{stroke-width:2.2;fill:var(--accent-bg)}
   nav .lg{display:none}
+  .dt{flex-wrap:wrap;gap:0}
+  .dt .filter{flex:1 0 100%;justify-content:flex-end;flex-wrap:nowrap;gap:0;margin-right:-10px}
+  #hoje{order:2}
+  header{padding-top:calc(env(safe-area-inset-top,0px) + 2px)}
   #status{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
   dialog{margin:auto 0 0;width:100%;max-width:100%;border-radius:14px 14px 0 0;max-height:calc(100dvh - 20px - env(safe-area-inset-top,0px))}
@@ -319,7 +350,7 @@ textarea{min-height:76px;resize:vertical}
 <header>
   <div class="wrap">
     <div class="dt"><span id="hoje"></span>
-      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div></div>
+      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="tema" aria-label="Tema: automático" title="Tema">◐</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div></div>
     <h1 id="titulo">Hoje</h1>
   </div>
 </header>
@@ -781,7 +812,8 @@ function abrirPlano(){
 
 function vPainel(){
   const hoje = new Date().getDay();
-  const blocos = S.cronograma.filter(b => +b.dia === hoje).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
+  const folgaHoje = semAula(hojeISO());
+  const blocos = S.cronograma.filter(b => +b.dia === hoje && !(folgaHoje && b.tipo === "aula")).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
   const proximas = [
     ...S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null).map(p => ({ data:p.data, t:esc(p.titulo)+exTag(p),
       tipo: p.tipo === "prova" ? "prova" : "entrega", cor:corDe(p.materiaId), sub:`${esc(nomeDe(p.materiaId))} · ${fmtData(p.data)}` })),
@@ -815,7 +847,7 @@ function vPainel(){
   ${widgets}
   <div class="grid2">
     <section class="panel">
-      <div class="bar" style="margin-bottom:8px"><h3>${DIAS[hoje]}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
+      <div class="bar" style="margin-bottom:8px"><h3>${DIAS[hoje]}${folgaHoje ? ` <span class="chip folga">sem aula · ${esc(folgaHoje)}</span>` : ""}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
       ${blocos.length ? `<div class="list">${blocos.map(b => `
         <div class="row"><span class="cb" style="background:${esc(corDe(b.materiaId))}"></span>
           <div class="grow"><div class="t">${esc(nomeDe(b.materiaId))}${exTag(b)}</div><div class="m">${esc(b.topico||rotTipo(b.tipo))}</div></div>
@@ -853,17 +885,56 @@ const botaoAgenda = () => FORA_DO_CLAUDE && temAgenda() ? '<button data-acao="ag
 function itensDoDia(iso){
   return [
     ...S.provas.filter(p => p.data === iso).map(p => ({ tipo: p.tipo === "prova" ? "prova" : "entrega", t:p.titulo, sub:nomeDe(p.materiaId), col:"provas", id:p.id })),
-    ...S.eventos.filter(e => e.data && e.data <= iso && iso <= (e.dataFim || e.data)).map(e => ({ tipo:"evento", t:e.titulo, sub:"", col:"eventos", id:e.id })),
+    ...S.eventos.filter(e => e.data && e.data <= iso && iso <= (e.dataFim || e.data)).map(e => ({ tipo: e.semAula ? "folga" : "evento", t:e.titulo, sub:"", col:"eventos", id:e.id })),
   ];
 }
-const ROT_ITEM = { prova:"Prova", entrega:"Entrega", evento:"Evento" };
+const ROT_ITEM = { prova:"Prova", entrega:"Entrega", evento:"Evento", folga:"Sem aula" };
+
+/* ---------- calendário da faculdade ---------- */
+// Dias sem aula: antes do início ou depois do fim das aulas (Ajustar período) e eventos marcados
+// como "Não tem aula" (feriados e recessos). Devolve o motivo, ou null quando é dia de aula normal.
+function semAula(iso){
+  const c = S.config;
+  if (c.aulasIni && iso < c.aulasIni) return "antes do início das aulas";
+  if (c.aulasFim && iso > c.aulasFim) return "aulas encerradas";
+  const e = S.eventos.find(e => e.semAula && e.data && e.data <= iso && iso <= (e.dataFim || e.data));
+  return e ? e.titulo : null;
+}
+// data deste dia da semana na semana atual (segunda a domingo)
+function dataNaSemana(d){
+  const seg = parseD(hojeISO()); seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7));
+  seg.setDate(seg.getDate() + (d === 0 ? 6 : d - 1)); return isoDe(seg);
+}
+function abrirPeriodo(){
+  const frm = $("#frm"), c = S.config;
+  const folgas = S.eventos.filter(e => e.semAula).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  frm.innerHTML = `<h2>Calendário da faculdade</h2>
+    <p class="need">Fora do período das aulas e nos feriados e recessos, o cronograma não mostra aula e o "Faltei hoje" não sugere matérias.</p>
+    <div class="duo"><div class="field"><label for="a_ini">Início das aulas</label><input type="date" id="a_ini" value="${esc(c.aulasIni || "")}"></div>
+      <div class="field"><label for="a_fim">Fim das aulas</label><input type="date" id="a_fim" value="${esc(c.aulasFim || "")}"></div></div>
+    <h3>Feriados e recessos</h3>
+    ${folgas.length ? `<div class="list">${folgas.map(e => `<div class="row"><div class="grow"><div class="t">${esc(e.titulo)}</div><div class="m">${periodo(e)}</div></div>
+      <button type="button" class="ghost" data-folga="${e.id}">Editar</button></div>`).join("")}</div>` : '<p class="empty">Nenhum cadastrado.</p>'}
+    <button type="button" id="a_nova">+ Feriado ou recesso</button>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Salvar</button></div></div>`;
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#a_nova").onclick = () => { $("#dlg").close(); abrirForm("eventos", null, { semAula:true }); };
+  frm.querySelectorAll("[data-folga]").forEach(b => b.onclick = () => { $("#dlg").close(); abrirForm("eventos", b.dataset.folga); });
+  frm.onsubmit = async e => { e.preventDefault();
+    const aulasIni = $("#a_ini").value, aulasFim = $("#a_fim").value;
+    if (aulasIni && aulasFim && aulasFim < aulasIni){ mostrarErro("a_fim", "O fim das aulas precisa ser depois do início."); return; }
+    await salvarConfig({ ...S.config, aulasIni, aulasFim });
+    $("#dlg").close(); toast("Salvo"); };
+  $("#dlg").showModal();
+}
 function vMes(){
   const y = mesRef.getFullYear(), m = mesRef.getMonth(), hoje = hojeISO();
   const diasNoMes = new Date(y, m+1, 0).getDate(), semanas = Math.ceil((mesRef.getDay() + diasNoMes) / 7);
   let celulas = "";
   for (let i = 0; i < semanas * 7; i++){
     const d = new Date(y, m, 1 - mesRef.getDay() + i), iso = isoDe(d);
-    celulas += `<div class="mc ${d.getMonth()!==m?"fora":""} ${iso===hoje?"hoje":""}">
+    celulas += `<div class="mc ${d.getMonth()!==m?"fora":""} ${iso===hoje?"hoje":""} ${semAula(iso)?"folga":""}">
       <button class="mn" data-novo="eventos" data-data="${iso}" aria-label="Adicionar evento em ${d.getDate()} de ${d.toLocaleDateString("pt-BR",{month:"long"})}">${d.getDate()}</button>
       ${itensDoDia(iso).map(it => `<button class="mi mi-${it.tipo}" data-edit="${it.col}" data-id="${it.id}" title="${esc(ROT_ITEM[it.tipo]+": "+it.t+(it.sub?" · "+it.sub:""))}"><span class="mt">${esc(it.t)}${it.sub?" · "+esc(it.sub):""}</span></button>`).join("")}
     </div>`;
@@ -871,14 +942,14 @@ function vMes(){
   const ini = isoDe(mesRef), fim = isoDe(new Date(y, m+1, 0));
   const lista = [
     ...S.provas.filter(p => p.data && p.data >= ini && p.data <= fim).map(p => ({ data:p.data, tipo: p.tipo === "prova" ? "prova" : "entrega", t:esc(p.titulo)+exTag(p), sub:esc(nomeDe(p.materiaId))+" · "+fmtData(p.data), col:"provas", id:p.id })),
-    ...S.eventos.filter(e => e.data && e.data <= fim && (e.dataFim || e.data) >= ini).map(e => ({ data:e.data, tipo:"evento", t:esc(e.titulo)+exTag(e), sub:periodo(e)+(e.obs?" · "+esc(e.obs):""), col:"eventos", id:e.id })),
+    ...S.eventos.filter(e => e.data && e.data <= fim && (e.dataFim || e.data) >= ini).map(e => ({ data:e.data, tipo: e.semAula ? "folga" : "evento", t:esc(e.titulo)+exTag(e), sub:periodo(e)+(e.obs?" · "+esc(e.obs):""), col:"eventos", id:e.id })),
   ].sort((a,b) => a.data.localeCompare(b.data));
   return `${avisoExemplo()}
   <div class="bar"><div class="mesnav"><h2>${mesRef.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}).replace(/^./, c => c.toUpperCase())}</h2>
       <button data-mes="-1" aria-label="Mês anterior">‹</button><button data-mes="0">Hoje</button><button data-mes="1" aria-label="Próximo mês">›</button></div>
-    <div class="filter">${seletorVis()}${botaoAgenda()}<button class="primary" data-novo="eventos">+ Evento</button></div></div>
+    <div class="filter">${seletorVis()}${botaoAgenda()}<button data-acao="periodo">Feriados e período</button><button class="primary" data-novo="eventos">+ Evento</button></div></div>
   <div class="mes">${DIAS_CURTO.map(d => `<div class="mh">${d}</div>`).join("")}${celulas}</div>
-  <div class="leg"><span><i style="background:var(--accent)"></i>Prova</span><span><i style="border-color:var(--accent)"></i>Entrega</span><span><i style="background:var(--surface-2);border-color:var(--line)"></i>Evento</span><span>Toque no número do dia para criar um evento.</span></div>
+  <div class="leg"><span><i style="background:var(--accent)"></i>Prova</span><span><i style="border-color:var(--accent)"></i>Entrega</span><span><i style="background:var(--surface-2);border-color:var(--line)"></i>Evento</span><span><i class="leg-folga"></i>Sem aula</span><span>Toque no número do dia para criar um evento.</span></div>
   <section class="panel"><h3>Neste mês</h3>${lista.length ? `<div class="list">${lista.map(it => `
     <div class="row"><div class="count"><b>${parseD(it.data).getDate()}</b>${DIAS_CURTO[parseD(it.data).getDay()].toLowerCase()}</div>
       <div class="grow"><div class="t">${it.t} <span class="chip">${ROT_ITEM[it.tipo]}</span></div><div class="m">${it.sub}</div></div>
@@ -893,11 +964,13 @@ function vCronograma(){
     return a + Math.max(0,(h2*60+m2)-(h1*60+m1)); },0) / 60;
   return `${avisoExemplo()}
   <div class="bar"><div><div class="need">Estudo planejado: <b class="num">${fmt(horas)} h</b> por semana (sem contar aulas)</div></div>
-    <div class="filter">${seletorVis()}<button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
+    <div class="filter">${seletorVis()}<button data-acao="periodo">Feriados e período</button><button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
   <div class="week">${ordem.map(d => {
     const bl = S.cronograma.filter(b => +b.dia === d).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
-    return `<div class="day ${d===hoje?"today":""}"><h3><span>${DIAS[d]}</span><button class="ghost" data-novo="cronograma" data-dia="${d}" aria-label="Adicionar em ${DIAS[d]}">+</button></h3>
-      ${bl.map(b => `<button class="blk" style="--c:${esc(corDe(b.materiaId))}" data-edit="cronograma" data-id="${b.id}">
+    const dt = dataNaSemana(d), folga = semAula(dt);
+    return `<div class="day ${d===hoje?"today":""}"><h3><span>${DIAS[d]} <span class="need num">${parseD(dt).getDate()}/${parseD(dt).getMonth()+1}</span></span><button class="ghost" data-novo="cronograma" data-dia="${d}" aria-label="Adicionar em ${DIAS[d]}">+</button></h3>
+      ${folga ? `<span class="chip folga">Sem aula · ${esc(folga)}</span>` : ""}
+      ${bl.map(b => `<button class="blk ${folga && b.tipo === "aula" ? "cancelada" : ""}" style="--c:${esc(corDe(b.materiaId))}" data-edit="cronograma" data-id="${b.id}">
         <div class="h">${esc(b.inicio||"")}–${esc(b.fim||"")} · ${rotTipo(b.tipo)}</div>
         <div class="n">${esc(nomeDe(b.materiaId))}${exTag(b)}</div>${b.topico?`<div class="p">${esc(b.topico)}</div>`:""}</button>`).join("") || '<span class="need">livre</span>'}
     </div>`; }).join("")}</div>`;
@@ -926,8 +999,62 @@ function vProvas(){
   <div class="grid2">
     <section class="panel"><h3>A fazer / sem nota</h3>${futuras.length?`<div class="list">${futuras.map(linha).join("")}</div>`:'<p class="empty">Nada pendente.</p>'}</section>
     <section class="panel"><h3>Com nota</h3>${feitas.length?`<div class="list">${feitas.map(linha).join("")}</div>`:'<p class="empty">Quando lançar uma nota, ela aparece aqui.</p>'}</section>
-  </div>`;
+  </div>
+  ${blocoEvolucao()}`;
 }
+
+/* ---------- gráfico da evolução da média ---------- */
+// Um gráfico pequeno por matéria: a média depois de cada avaliação com nota (em ordem de data),
+// com uma linha tracejada na média mínima. Desenhado em SVG pelo próprio site, sem biblioteca.
+function pontosEvolucao(materiaId){
+  const com = S.provas.filter(p => p.materiaId === materiaId && num(p.nota) != null)
+    .sort((a, b) => (a.data || "9").localeCompare(b.data || "9"));
+  return com.map((p, i) => ({ p, media: calcNotas(com.slice(0, i + 1)).media, nota: num(p.nota) / (num(p.notaMax) || 10) * 10 }));
+}
+function graficoEvolucao(m){
+  const pts = pontosEvolucao(m.id); if (!pts.length) return "";
+  const W = 320, H = 150, L = 30, R = 12, T = 12, B = 34, min = S.config.mediaMin;
+  const x = i => pts.length === 1 ? L + (W - L - R) / 2 : L + i * (W - L - R) / (pts.length - 1);
+  const y = v => T + (10 - v) / 10 * (H - T - B);
+  const ultima = pts[pts.length - 1].media, cls = ultima >= min ? "ok" : "bad";
+  const rotulo = t => { const s = String(t || ""); return s.length > 9 ? s.slice(0, 8) + "…" : s; };
+  // com muitas avaliações, só a primeira e a última ganham nome embaixo
+  const comNome = i => pts.length <= 6 || i === 0 || i === pts.length - 1;
+  const linha = pts.map((q, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(q.media).toFixed(1)}`).join(" ");
+  const desc = `Média de ${m.nome}: ` + pts.map(q => `depois de ${q.p.titulo}, ${fmt(q.media)}`).join("; ") + `. Média mínima ${fmt(min)}.`;
+  return `<figure class="evol">
+    <figcaption><span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}</span><span class="chip ${cls} num">${fmt(ultima)}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(desc)}">
+      ${[0, 5, 10].filter(v => Math.abs(v - min) >= 1.2).map(v => `<line class="grade" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="eixo" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
+      <line class="minima" x1="${L}" x2="${W - R}" y1="${y(min)}" y2="${y(min)}"/>
+      <text class="eixo min" x="${L - 6}" y="${y(min) + 4}" text-anchor="end">${fmt(min)}</text>
+      ${pts.length > 1 ? `<path d="${linha}" fill="none" stroke="${esc(m.cor)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+      ${pts.map((q, i) => `<circle cx="${x(i)}" cy="${y(q.media)}" r="4.5" fill="${esc(m.cor)}" stroke="var(--surface)" stroke-width="2"/>
+        ${comNome(i) ? `<text class="eixo" x="${x(i)}" y="${H - 12}" text-anchor="${pts.length > 1 && i === 0 ? "start" : pts.length > 1 && i === pts.length - 1 ? "end" : "middle"}">${esc(rotulo(q.p.titulo))}</text>` : ""}
+        <circle class="alvo" cx="${x(i)}" cy="${y(q.media)}" r="16" tabindex="0" data-dica="${esc(`${q.p.titulo}: nota ${fmt(q.nota)} · média ${fmt(q.media)}`)}"/>`).join("")}
+    </svg></figure>`;
+}
+function blocoEvolucao(){
+  const ms = S.materias.filter(m => !filtroProvas || m.id === filtroProvas), graf = ms.map(graficoEvolucao).filter(Boolean);
+  if (!graf.length) return "";
+  return `<section class="panel" style="margin-top:18px"><h3>Evolução da média</h3>
+    <p class="need" style="margin-top:-6px">Média da matéria depois de cada avaliação com nota. A linha tracejada é a média mínima. Toque num ponto para ver os números.</p>
+    <div class="evols">${graf.join("")}</div><div class="dica" id="dica" hidden></div></section>`;
+}
+// dica ao passar o mouse ou tocar num ponto do gráfico
+function mostrarDica(alvo){
+  const d = $("#dica"); if (!d) return;
+  if (!alvo){ d.hidden = true; return; }
+  const sec = alvo.closest("section").getBoundingClientRect(), r = alvo.getBoundingClientRect();
+  d.textContent = alvo.dataset.dica; d.hidden = false;
+  const larg = d.offsetWidth;
+  d.style.left = Math.min(Math.max(8, r.left + r.width / 2 - sec.left - larg / 2), sec.width - larg - 8) + "px";
+  d.style.top = (r.top - sec.top - d.offsetHeight - 2) + "px";
+}
+document.addEventListener("pointerover", e => { if (e.target.classList?.contains("alvo")) mostrarDica(e.target); });
+document.addEventListener("pointerout", e => { if (e.target.classList?.contains("alvo")) mostrarDica(null); });
+document.addEventListener("focusin", e => mostrarDica(e.target.classList?.contains("alvo") ? e.target : null));
+document.addEventListener("click", e => { if (!e.target.classList?.contains("alvo") && $("#dica")) $("#dica").hidden = true; });
 const rotProva = t => ({prova:"Prova",trabalho:"Trabalho",lista:"Lista",seminario:"Seminário"}[t]||"Prova");
 
 function vFaltas(){
@@ -1075,12 +1202,14 @@ function acaoFoco(acao){
 }
 
 /* ---------- tarefas ---------- */
+const REPETIR = [["", "Não repete"], ["7", "Toda semana"], ["14", "A cada 2 semanas"]];
 // pendentes primeiro, por prazo (sem prazo vai para o fim); feitas por último
 const ordemTarefas = l => [...l].sort((a,b) => (a.feita?1:0) - (b.feita?1:0) || (a.data||"9").localeCompare(b.data||"9"));
 function linhaTarefa(t, comMateria){
   const atrasada = !t.feita && t.data && diasAte(t.data) < 0;
   const prazo = t.feita || !t.data ? "" : atrasada ? '<span class="chip bad">atrasada</span>' : diasAte(t.data) === 0 ? '<span class="chip bad">hoje</span>' : chipPrazo(t.data);
-  const sub = [comMateria ? `<span class="dot" style="background:${esc(corDe(t.materiaId))}"></span> ${esc(nomeDe(t.materiaId))}` : "", t.data ? "até "+fmtData(t.data) : ""].filter(Boolean).join(" · ");
+  const sub = [comMateria ? `<span class="dot" style="background:${esc(corDe(t.materiaId))}"></span> ${esc(nomeDe(t.materiaId))}` : "", t.data ? "até "+fmtData(t.data) : "",
+    t.repetir && !t.proxima ? "↻ " + (REPETIR.find(r => r[0] === String(t.repetir))?.[1] || "").toLowerCase() : ""].filter(Boolean).join(" · ");
   return `<div class="row tarefa"><label class="est"><input type="checkbox" data-tarefa="${t.id}" ${t.feita?"checked":""} aria-label="Feita: ${esc(t.titulo)}">
       <span><span class="t">${esc(t.titulo)}</span>${exTag(t)}${sub?`<span class="m" style="display:block">${sub}</span>`:""}</span></label>
     ${prazo}<button class="ghost" data-edit="tarefas" data-id="${t.id}" aria-label="Editar ${esc(t.titulo)}">Editar</button></div>`;
@@ -1103,7 +1232,21 @@ function blocoTarefas(m){
 async function marcarTarefa(id, feita){
   const t = S.tarefas.find(x => x.id === id); if (!t) return;
   const { id:_, ...resto } = t;
-  await salvar("tarefas", id, { ...resto, feita });
+  // ao marcar uma tarefa que se repete, a próxima é criada uma vez só (a marca "proxima" evita repetir)
+  const repete = feita && t.repetir && t.data && !t.proxima;
+  if (await salvar("tarefas", id, { ...resto, feita, ...(repete ? { proxima:true } : {}) }) && repete){
+    const nova = await criarProxima(t);
+    if (nova) toast(`Próxima: ${t.titulo}, até ${fmtData(nova)}`);
+  }
+}
+// cria a próxima vez da tarefa; o prazo anda de N em N dias até chegar em hoje ou depois
+async function criarProxima(t){
+  const passo = +t.repetir; if (!passo || !t.data) return null;
+  const d = parseD(t.data), hoje = parseD(hojeISO());
+  do d.setDate(d.getDate() + passo); while (d < hoje);
+  const data = isoDe(d);
+  await salvar("tarefas", null, { materiaId:t.materiaId, titulo:t.titulo, data, repetir:t.repetir, feita:false });
+  return data;
 }
 
 /* ---------- anotações e links ---------- */
@@ -1175,11 +1318,13 @@ const FORMS = {
   eventos: { titulo:"Evento", masc:true, campos:[
     {k:"titulo",l:"Nome do evento",t:"text",req:1,ph:"Ex.: Semana do Contador"},
     {duo:[{k:"data",l:"Dia",t:"date",def:hojeISO},{k:"dataFim",l:"Até (opcional)",t:"date"}]},
+    {k:"semAula",l:"Não tem aula nesses dias (feriado ou recesso)",t:"check"},
     {k:"obs",l:"Observação",t:"text"} ]},
   tarefas: { titulo:"Tarefa", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
     {k:"titulo",l:"O que fazer",t:"text",req:1,ph:"Ex.: Lista 3, ler capítulo 2"},
     {k:"data",l:"Prazo (opcional)",t:"date"},
+    {k:"repetir",l:"Repetir",t:"select",opts:REPETIR,hint:"Ao marcar como feita, a próxima aparece sozinha com o prazo seguinte."},
     {k:"feita",l:"Já está feita",t:"check"} ]},
   provas: { titulo:"Prova ou trabalho", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
@@ -1193,7 +1338,7 @@ const FORMS = {
 function campoHTML(c, v){
   const id = "f_"+c.k, val = v ?? (typeof c.def==="function"?c.def():c.def) ?? "";
   if (c.t==="select"){ const o = typeof c.opts==="function"?c.opts():c.opts;
-    return `<div class="field"><label for="${id}">${c.l}</label><select id="${id}" name="${c.k}">${o.map(([a,b])=>`<option value="${esc(a)}" ${String(val)===String(a)?"selected":""}>${esc(b)}</option>`).join("")}</select></div>`; }
+    return `<div class="field"><label for="${id}">${c.l}</label><select id="${id}" name="${c.k}">${o.map(([a,b])=>`<option value="${esc(a)}" ${String(val)===String(a)?"selected":""}>${esc(b)}</option>`).join("")}</select>${c.hint?`<span class="need">${c.hint}</span>`:""}</div>`; }
   if (c.t==="check") return `<div class="field check"><input type="checkbox" id="${id}" name="${c.k}" ${val?"checked":""}><label for="${id}">${c.l}</label></div>`;
   if (c.t==="area") return `<div class="field"><label for="${id}">${c.l}</label><textarea id="${id}" name="${c.k}">${esc(val)}</textarea></div>`;
   if (c.t==="cor"){ const cur = val || CORES[S.materias.length % CORES.length];
@@ -1219,6 +1364,7 @@ function validar(col, out, raw){
     if (!out.data) return ["data", "Informe o dia do evento."];
     if (out.dataFim && out.dataFim < out.data) return ["dataFim", "O último dia precisa ser igual ou depois do primeiro."];
   }
+  if (col==="tarefas" && out.repetir && !out.data) return ["data", "Para repetir, informe o prazo da primeira vez."];
   if (col==="provas"){
     if (out.notaMax == null || out.notaMax <= 0) return ["notaMax", "Informe quanto a avaliação vale (maior que zero)."];
     if (out.peso == null || out.peso <= 0) return ["peso", "O peso precisa ser maior que zero."];
@@ -1251,7 +1397,10 @@ function abrirForm(col, id, preset={}){
     if (col==="cronograma") out.dia = +out.dia;
     // mantém os campos que o formulário não mostra (anotações, links, marca de exemplo)
     const { id:_, ...resto } = item || {};
-    const ok = await salvar(col, id, { ...resto, ...out });
+    // tarefa que se repete marcada como feita no formulário: cria a próxima
+    const repete = col==="tarefas" && out.feita && out.repetir && !resto.proxima;
+    const ok = await salvar(col, id, { ...resto, ...out, ...(repete ? { proxima:true } : {}) });
+    if (ok && repete) await criarProxima({ ...resto, ...out });
     if (ok){ $("#dlg").close(); toast("Salvo"); }
   };
   $("#cancel").onclick = () => $("#dlg").close();
@@ -1300,7 +1449,8 @@ function abrirConfig(){
 function abrirFaltei(){
   if (!S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
   const hoje = hojeISO(), dia = new Date().getDay(), aulasHoje = {};
-  S.cronograma.filter(b => +b.dia === dia && b.tipo === "aula" && b.inicio && b.fim).forEach(b => {
+  const folga = semAula(hoje);
+  S.cronograma.filter(b => !folga && +b.dia === dia && b.tipo === "aula" && b.inicio && b.fim).forEach(b => {
     const [h1,m1] = b.inicio.split(":").map(Number), [h2,m2] = b.fim.split(":").map(Number);
     aulasHoje[b.materiaId] = (aulasHoje[b.materiaId] || 0) + Math.max(1, Math.round(((h2*60+m2) - (h1*60+m1)) / 50));
   });
@@ -1309,6 +1459,7 @@ function abrirFaltei(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Faltei hoje</h2>
     <p class="need"><b>${fmtData(hoje)}</b> · Marque as matérias e confira quantas aulas você perdeu em cada uma.</p>
+    ${folga ? `<p class="need"><span class="chip folga">Hoje não tem aula · ${esc(folga)}</span></p>` : ""}
     <div class="faltei">${lista.map(m => `<div class="row">
       <label class="est manter"><input type="checkbox" name="fm" id="fm_${m.id}" value="${m.id}" ${aulasHoje[m.id] && !jaTem(m.id) ? "checked" : ""}>
         <span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}
@@ -1627,6 +1778,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao==="lembretes") abrirLembretes();
   else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.dataset.acao==="faltei") abrirFaltei();
+  else if (b.dataset.acao==="periodo") abrirPeriodo();
   else if (b.dataset.acao?.startsWith("foco")) acaoFoco(b.dataset.acao);
   else if (b.dataset.hist) apagarHistorico(b);
   else if (b.dataset.acao==="notas") abrirNotas(b.dataset.id);
@@ -1645,6 +1797,98 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+
+/* ---------- busca ---------- */
+// Procura em tudo pelo texto, ignorando acentos e maiúsculas ("calculo" acha "Cálculo").
+const semAcento = t => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function itensBusca(){
+  const sub = id => nomeDe(id);
+  return [
+    ...S.materias.map(m => ({ col:"materias", id:m.id, tipo:"Matéria", t:m.nome, sub:m.professor || "", cor:m.cor, txt:[m.nome, m.professor] })),
+    ...S.materias.filter(m => m.anotacoes || (m.links || []).length).map(m => ({ col:"notas", id:m.id, tipo:"Anotações", t:m.nome, sub:"", cor:m.cor,
+        txt:[m.anotacoes, ...(m.links || []).flatMap(l => [l.titulo, l.url])], trecho:m.anotacoes })),
+    ...S.provas.map(p => ({ col:"provas", id:p.id, tipo:rotProva(p.tipo), t:p.titulo, sub:sub(p.materiaId) + (p.data ? " · " + fmtData(p.data) : ""), cor:corDe(p.materiaId), txt:[p.titulo, p.conteudo, sub(p.materiaId)], trecho:p.conteudo })),
+    ...S.tarefas.map(x => ({ col:"tarefas", id:x.id, tipo:x.feita ? "Tarefa feita" : "Tarefa", t:x.titulo, sub:sub(x.materiaId) + (x.data ? " · até " + fmtData(x.data) : ""), cor:corDe(x.materiaId), txt:[x.titulo, sub(x.materiaId)] })),
+    ...S.eventos.map(e => ({ col:"eventos", id:e.id, tipo:"Evento", t:e.titulo, sub:periodo(e), cor:"#6b7a8f", txt:[e.titulo, e.obs], trecho:e.obs })),
+    ...S.cronograma.filter(b => b.topico).map(b => ({ col:"cronograma", id:b.id, tipo:rotTipo(b.tipo), t:b.topico, sub:sub(b.materiaId) + " · " + DIAS[b.dia], cor:corDe(b.materiaId), txt:[b.topico] })),
+    ...S.faltas.filter(f => f.obs).map(f => ({ col:"faltas", id:f.id, tipo:"Falta", t:f.obs, sub:sub(f.materiaId) + " · " + fmtData(f.data), cor:corDe(f.materiaId), txt:[f.obs] })),
+  ];
+}
+// mostra o pedaço do texto em volta do que foi achado, com o termo destacado
+function destacar(texto, q){
+  const t = String(texto ?? ""), i = semAcento(t).indexOf(q);
+  if (i < 0) return esc(t);
+  return esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length));
+}
+function trechoDe(texto, q){
+  const t = String(texto ?? "").replace(/\s+/g, " "), i = semAcento(t).indexOf(q);
+  if (i < 0) return "";
+  const ini = Math.max(0, i - 30);
+  return (ini ? "…" : "") + destacar(t.slice(ini, i + q.length + 50), q) + (i + q.length + 50 < t.length ? "…" : "");
+}
+function resultadosBusca(q){
+  q = semAcento(q.trim());
+  if (!q) return '<p class="empty">Digite para procurar em matérias, provas, tarefas, eventos, cronograma e anotações.</p>';
+  const ach = itensBusca().filter(it => it.txt.some(x => semAcento(x).includes(q)));
+  if (!ach.length) return '<p class="empty">Nada encontrado.</p>';
+  return `<div class="list">${ach.slice(0, 40).map(it => `<button type="button" class="row achado" data-col="${it.col}" data-id="${it.id}">
+      <span class="dot" style="background:${esc(it.cor)}"></span>
+      <span class="grow"><span class="t">${destacar(it.t, q)}</span> <span class="chip">${esc(it.tipo)}</span>
+        ${it.sub ? `<span class="m" style="display:block">${esc(it.sub)}</span>` : ""}
+        ${it.trecho && !semAcento(it.t).includes(q) ? `<span class="m" style="display:block">${trechoDe(it.trecho, q)}</span>` : ""}</span></button>`).join("")}</div>
+    ${ach.length > 40 ? `<p class="need">Mostrando 40 de ${ach.length}. Digite mais para filtrar.</p>` : ""}`;
+}
+function abrirBusca(){
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Buscar</h2>
+    <div class="field"><label for="q_busca" class="sr">Buscar</label><input id="q_busca" type="search" autocomplete="off" placeholder="Ex.: P1, lista, cálculo" value="${esc(abrirBusca.ultima || "")}"></div>
+    <div id="q_res">${resultadosBusca(abrirBusca.ultima || "")}</div>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+  frm.onsubmit = e => e.preventDefault();
+  $("#cancel").onclick = () => $("#dlg").close();
+  const q = $("#q_busca");
+  q.oninput = () => { abrirBusca.ultima = q.value; $("#q_res").innerHTML = resultadosBusca(q.value); };
+  $("#q_res").onclick = e => {
+    const b = e.target.closest(".achado"); if (!b) return;
+    $("#dlg").close();
+    if (b.dataset.col === "notas") abrirNotas(b.dataset.id);
+    else abrirForm(b.dataset.col, b.dataset.id);
+  };
+  $("#dlg").showModal(); q.focus(); q.select();
+}
+{ // botão no topo (antes do Backup) e atalho "/" ou Ctrl+K no computador
+  const b = document.createElement("button"); b.className = "ghost"; b.id = "buscar"; b.textContent = "Buscar";
+  $("#bkp").before(b); b.onclick = abrirBusca;
+  document.addEventListener("keydown", e => {
+    const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    if ((e.key === "/" && !digitando) || (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey))){
+      if ($("#dlg").open) return;
+      e.preventDefault(); abrirBusca();
+    }
+  });
+}
+
+/* ---------- tema claro/escuro ---------- */
+// Automático segue o tema do celular ou computador. Claro e Escuro fixam a escolha neste aparelho.
+const LS_TEMA = "meu-semestre-tema", TEMAS = [["", "automático", "◐"], ["light", "claro", "☀"], ["dark", "escuro", "☾"]];
+let tema = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; } catch(e){}
+const corBarra = document.querySelectorAll('meta[name="theme-color"]'), corOriginal = [...corBarra].map(m => m.content);
+function aplicarTema(){
+  const [valor, nome, icone] = TEMAS.find(t => t[0] === tema) || TEMAS[0];
+  if (valor) document.documentElement.dataset.theme = valor;
+  else if (FORA_DO_CLAUDE) delete document.documentElement.dataset.theme;
+  // cor da barra do navegador e do app instalado
+  corBarra.forEach((m, i) => m.content = valor ? (valor === "dark" ? "#141a27" : "#ffffff") : corOriginal[i]);
+  const b = $("#tema"); b.textContent = icone; b.setAttribute("aria-label", "Tema: " + nome); b.title = "Tema: " + nome + " (toque para trocar)";
+  return nome;
+}
+$("#tema").onclick = () => {
+  const i = TEMAS.findIndex(t => t[0] === tema);
+  tema = TEMAS[(i + 1) % TEMAS.length][0];
+  try { tema ? localStorage.setItem(LS_TEMA, tema) : localStorage.removeItem(LS_TEMA); } catch(e){}
+  toast("Tema " + aplicarTema());
+};
+aplicarTema();
 $("#sinc").onclick = botaoSinc;
 
 /* ---------- modo aplicativo ---------- */
