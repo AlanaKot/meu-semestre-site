@@ -251,6 +251,11 @@ dialog h2{font-size:1.25rem}
 input,select,textarea{font:inherit;color:var(--fg);background:var(--campo);border:0;border-radius:10px;padding:9px 12px;width:100%}
 .panel input,.panel select,.card input,.card select,.grupo input,.grupo select,.bar select{background:var(--fill)}
 .field.check input{width:auto}
+/* iPhone: campos de data e hora vêm mais altos e mais largos que os outros; aqui ficam iguais */
+input:not([type=checkbox]):not([type=radio]):not([type=file]),select{height:42px}
+input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;display:block;min-width:0;max-width:100%;line-height:1.4;text-align:left}
+input::-webkit-date-and-time-value{text-align:left;margin:0;min-height:1.4em}
+.duo>*{min-width:0}
 textarea{min-height:76px;resize:vertical}
 .duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .swatches{display:flex;gap:10px;flex-wrap:wrap}
@@ -307,6 +312,7 @@ textarea{min-height:76px;resize:vertical}
   .mn{min-height:0!important;padding:0!important;width:34px;height:34px}
   .blk{min-height:44px}
   input,select,textarea{font-size:17px;padding:11px 12px}
+  input:not([type=checkbox]):not([type=radio]):not([type=file]),select{height:46px}
   .est{padding:8px 0}
   .est input,.field.check input,.dias input{width:24px;height:24px}
   .swatches label{width:40px;height:40px}
