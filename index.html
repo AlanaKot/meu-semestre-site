@@ -141,6 +141,19 @@ button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .card>.t::before,.card .bar .t::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px}
 .stats{display:flex;gap:18px;flex-wrap:wrap}
+#tema{font-size:1.2rem;line-height:1}
+.evols{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px 22px}
+.evol{margin:0}
+.evol figcaption{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:4px}
+.evol svg{width:100%;height:auto;display:block;overflow:visible}
+.evol .grade{stroke:var(--line);stroke-width:1}
+.evol .minima{stroke:var(--muted);stroke-width:1.5;stroke-dasharray:5 4}
+.evol .eixo{fill:var(--muted);font:11px var(--f-body)}
+.evol .eixo.min{fill:var(--fg);font-weight:600}
+.evol .alvo{fill:transparent;cursor:pointer;outline:none}
+.evol .alvo:focus-visible{stroke:var(--ink);stroke-width:2}
+section:has(.evols){position:relative}
+.dica{position:absolute;z-index:3;pointer-events:none;background:var(--fg);color:var(--bg);font-size:.8rem;padding:4px 8px;border-radius:6px;white-space:nowrap}
 .achado{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;color:inherit;font:inherit;cursor:pointer;min-height:44px}
 .achado:hover{background:var(--surface-2)}
 .achado mark{background:var(--warn-bg);color:inherit;border-radius:2px;padding:0 1px}
@@ -818,8 +831,62 @@ function vProvas(){
   <div class="grid2">
     <section class="panel"><h3>A fazer / sem nota</h3>${futuras.length?`<div class="list">${futuras.map(linha).join("")}</div>`:'<p class="empty">Nada pendente.</p>'}</section>
     <section class="panel"><h3>Com nota</h3>${feitas.length?`<div class="list">${feitas.map(linha).join("")}</div>`:'<p class="empty">Quando lançar uma nota, ela aparece aqui.</p>'}</section>
-  </div>`;
+  </div>
+  ${blocoEvolucao()}`;
 }
+
+/* ---------- gráfico da evolução da média ---------- */
+// Um gráfico pequeno por matéria: a média depois de cada avaliação com nota (em ordem de data),
+// com uma linha tracejada na média mínima. Desenhado em SVG pelo próprio site, sem biblioteca.
+function pontosEvolucao(materiaId){
+  const com = S.provas.filter(p => p.materiaId === materiaId && num(p.nota) != null)
+    .sort((a, b) => (a.data || "9").localeCompare(b.data || "9"));
+  return com.map((p, i) => ({ p, media: calcNotas(com.slice(0, i + 1)).media, nota: num(p.nota) / (num(p.notaMax) || 10) * 10 }));
+}
+function graficoEvolucao(m){
+  const pts = pontosEvolucao(m.id); if (!pts.length) return "";
+  const W = 320, H = 150, L = 30, R = 12, T = 12, B = 34, min = S.config.mediaMin;
+  const x = i => pts.length === 1 ? L + (W - L - R) / 2 : L + i * (W - L - R) / (pts.length - 1);
+  const y = v => T + (10 - v) / 10 * (H - T - B);
+  const ultima = pts[pts.length - 1].media, cls = ultima >= min ? "ok" : "bad";
+  const rotulo = t => { const s = String(t || ""); return s.length > 9 ? s.slice(0, 8) + "…" : s; };
+  // com muitas avaliações, só a primeira e a última ganham nome embaixo
+  const comNome = i => pts.length <= 6 || i === 0 || i === pts.length - 1;
+  const linha = pts.map((q, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(q.media).toFixed(1)}`).join(" ");
+  const desc = `Média de ${m.nome}: ` + pts.map(q => `depois de ${q.p.titulo}, ${fmt(q.media)}`).join("; ") + `. Média mínima ${fmt(min)}.`;
+  return `<figure class="evol">
+    <figcaption><span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}</span><span class="chip ${cls} num">${fmt(ultima)}</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(desc)}">
+      ${[0, 5, 10].filter(v => Math.abs(v - min) >= 1.2).map(v => `<line class="grade" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="eixo" x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
+      <line class="minima" x1="${L}" x2="${W - R}" y1="${y(min)}" y2="${y(min)}"/>
+      <text class="eixo min" x="${L - 6}" y="${y(min) + 4}" text-anchor="end">${fmt(min)}</text>
+      ${pts.length > 1 ? `<path d="${linha}" fill="none" stroke="${esc(m.cor)}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>` : ""}
+      ${pts.map((q, i) => `<circle cx="${x(i)}" cy="${y(q.media)}" r="4.5" fill="${esc(m.cor)}" stroke="var(--surface)" stroke-width="2"/>
+        ${comNome(i) ? `<text class="eixo" x="${x(i)}" y="${H - 12}" text-anchor="${pts.length > 1 && i === 0 ? "start" : pts.length > 1 && i === pts.length - 1 ? "end" : "middle"}">${esc(rotulo(q.p.titulo))}</text>` : ""}
+        <circle class="alvo" cx="${x(i)}" cy="${y(q.media)}" r="16" tabindex="0" data-dica="${esc(`${q.p.titulo}: nota ${fmt(q.nota)} · média ${fmt(q.media)}`)}"/>`).join("")}
+    </svg></figure>`;
+}
+function blocoEvolucao(){
+  const ms = S.materias.filter(m => !filtroProvas || m.id === filtroProvas), graf = ms.map(graficoEvolucao).filter(Boolean);
+  if (!graf.length) return "";
+  return `<section class="panel" style="margin-top:18px"><h3>Evolução da média</h3>
+    <p class="need" style="margin-top:-6px">Média da matéria depois de cada avaliação com nota. A linha tracejada é a média mínima. Toque num ponto para ver os números.</p>
+    <div class="evols">${graf.join("")}</div><div class="dica" id="dica" hidden></div></section>`;
+}
+// dica ao passar o mouse ou tocar num ponto do gráfico
+function mostrarDica(alvo){
+  const d = $("#dica"); if (!d) return;
+  if (!alvo){ d.hidden = true; return; }
+  const sec = alvo.closest("section").getBoundingClientRect(), r = alvo.getBoundingClientRect();
+  d.textContent = alvo.dataset.dica; d.hidden = false;
+  const larg = d.offsetWidth;
+  d.style.left = Math.min(Math.max(8, r.left + r.width / 2 - sec.left - larg / 2), sec.width - larg - 8) + "px";
+  d.style.top = (r.top - sec.top - d.offsetHeight - 2) + "px";
+}
+document.addEventListener("pointerover", e => { if (e.target.classList?.contains("alvo")) mostrarDica(e.target); });
+document.addEventListener("pointerout", e => { if (e.target.classList?.contains("alvo")) mostrarDica(null); });
+document.addEventListener("focusin", e => mostrarDica(e.target.classList?.contains("alvo") ? e.target : null));
+document.addEventListener("click", e => { if (!e.target.classList?.contains("alvo") && $("#dica")) $("#dica").hidden = true; });
 const rotProva = t => ({prova:"Prova",trabalho:"Trabalho",lista:"Lista",seminario:"Seminário"}[t]||"Prova");
 
 function vFaltas(){
