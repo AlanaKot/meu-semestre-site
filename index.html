@@ -235,6 +235,10 @@ section:has(.evols){position:relative}
 /* formulários: folha */
 dialog{border:0;border-radius:14px;background:var(--folha);color:var(--fg);padding:0;width:min(480px,calc(100vw - 32px));max-height:calc(100dvh - 40px);box-shadow:0 24px 60px -20px rgba(0,0,0,.5)}
 dialog::backdrop{background:rgba(0,0,0,.4)}
+/* com uma janela aberta, a página de trás fica parada (a rolagem fica só dentro da janela) */
+dialog{overscroll-behavior:contain}
+html:has(dialog[open]){overflow:hidden}
+body.travada{position:fixed;left:0;right:0;overflow:hidden}
 dialog form{padding:20px 18px 18px;display:flex;flex-direction:column;gap:14px}
 dialog h2{font-size:1.25rem}
 .field{display:flex;flex-direction:column;gap:5px}
@@ -1797,6 +1801,20 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+
+// Trava a rolagem da página enquanto a janela (#dlg) está aberta. No iPhone, só esconder a barra
+// de rolagem não basta: a página é "presa" no lugar e volta para a mesma posição ao fechar.
+{
+  let posicao = 0;
+  new MutationObserver(() => {
+    const aberto = $("#dlg").open, body = document.body;
+    if (aberto && !body.classList.contains("travada")){
+      posicao = scrollY; body.style.top = -posicao + "px"; body.classList.add("travada");
+    } else if (!aberto && body.classList.contains("travada")){
+      body.classList.remove("travada"); body.style.top = ""; scrollTo(0, posicao);
+    }
+  }).observe($("#dlg"), { attributes:true, attributeFilter:["open"] });
+}
 
 /* ---------- busca ---------- */
 // Procura em tudo pelo texto, ignorando acentos e maiúsculas ("calculo" acha "Cálculo").
