@@ -171,6 +171,8 @@ const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
 const COLS = ["materias","cronograma","faltas","provas"];
 const LS_KEY = "meu-semestre-v1";
+const LS_BACKUP = "meu-semestre-backup-em";
+const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
 const S = { materias:[], cronograma:[], faltas:[], provas:[], config:{ mediaMin:6, freqMin:75 } };
 let db = null, mode = "carregando";
@@ -286,9 +288,19 @@ function corFaltas(r){
 
 /* ---------- views ---------- */
 const temExemplos = () => COLS.some(c => S[c].some(x => x.exemplo));
+// fora do Claude os dados vivem só neste navegador, então lembramos do backup
+function marcarBackup(){ try { localStorage.setItem(LS_BACKUP, hojeISO()); } catch(e){} }
+function avisoBackup(){
+  if (!FORA_DO_CLAUDE || mode !== "local" || !COLS.some(c => S[c].length)) return "";
+  let ult = null; try { ult = localStorage.getItem(LS_BACKUP); } catch(e){}
+  const dias = ult ? -diasAte(ult) : null;
+  if (dias != null && dias < 7) return "";
+  const msg = dias == null ? "Você ainda não fez backup neste aparelho. Os dados ficam só neste navegador." : `Seu último backup foi há ${dias} dias. Os dados ficam só neste navegador.`;
+  return `<div class="notice"><span>${msg}</span><button data-acao="backup">Fazer backup</button></div>`;
+}
 function avisoExemplo(){
-  if (!temExemplos()) return "";
-  return `<div class="notice"><span>Os itens marcados como <span class="chip hl">exemplo</span> estão aqui só para mostrar como funciona.</span><button id="limparEx">Apagar exemplos</button></div>`;
+  if (!temExemplos()) return avisoBackup();
+  return avisoBackup() + `<div class="notice"><span>Os itens marcados como <span class="chip hl">exemplo</span> estão aqui só para mostrar como funciona.</span><button id="limparEx">Apagar exemplos</button></div>`;
 }
 const exTag = x => x.exemplo ? ' <span class="chip hl">exemplo</span>' : "";
 
@@ -373,6 +385,7 @@ function vProvas(){
   return `${avisoExemplo()}
   <div class="bar"><h2>Provas e notas</h2>
     <div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select>
+    ${FORA_DO_CLAUDE && S.provas.some(p => p.data && diasAte(p.data) >= 0) ? '<button data-acao="agenda">Enviar para a agenda</button>' : ""}
     <button class="primary" data-novo="provas">+ Prova ou trabalho</button></div></div>
   ${cards?`<div class="panel stats" style="margin-bottom:18px">${cards}</div>`:""}
   <div class="grid2">
@@ -554,7 +567,7 @@ function abrirBackup(){
       a.href = URL.createObjectURL(new Blob([data], { type:"application/json" }));
       a.download = nome; document.body.append(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      toast("Backup baixado"); return;
+      marcarBackup(); render(); toast("Backup baixado"); return;
     }
     const dl = await window.claude?.use?.("downloads").catch(()=>null);
     if (!dl){ try { await navigator.clipboard.writeText(data); toast("Backup copiado. Cole num arquivo .json"); } catch(e){ toast("Não foi possível baixar aqui."); } return; }
@@ -570,11 +583,45 @@ function abrirBackup(){
       let n = 0;
       for (const c of COLS) for (const {id, ...x} of (d[c]||[])) { if (await salvar(c, id, x)) n++; }
       if (d.config) await salvarConfig(d.config);
+      marcarBackup(); render();
       $("#dlg").close(); toast(n+" itens importados");
     };
     rd.readAsText(f);
   };
   $("#dlg").showModal();
+}
+
+/* ---------- agenda (.ics) ---------- */
+// Gera um arquivo de calendário com as provas e entregas futuras. O UID é fixo por item,
+// então importar de novo atualiza os eventos em vez de duplicar.
+function gerarICS(){
+  const txt = v => String(v ?? "").replace(/\\/g,"\\\\").replace(/[,;]/g,"\\$&").replace(/\r?\n/g,"\\n");
+  const dia = iso => iso.replace(/-/g,"");
+  const seguinte = iso => { const d = parseD(iso); d.setDate(d.getDate()+1); return d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"); };
+  const agora = new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d+/,"");
+  // linhas longas são quebradas, como o formato pede
+  const dobrar = l => { const ch = [...l], partes = []; while (ch.length > 60) partes.push(ch.splice(0, 60).join("")); partes.push(ch.join("")); return partes.join("\r\n "); };
+  const L = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Meu Semestre//PT-BR","CALSCALE:GREGORIAN","X-WR-CALNAME:Meu Semestre"];
+  const itens = S.provas.filter(p => p.data && diasAte(p.data) >= 0).sort((a,b) => a.data.localeCompare(b.data));
+  itens.forEach(p => {
+    L.push("BEGIN:VEVENT", "UID:"+p.id+"@meu-semestre", "DTSTAMP:"+agora,
+      "DTSTART;VALUE=DATE:"+dia(p.data), "DTEND;VALUE=DATE:"+seguinte(p.data),
+      "SUMMARY:"+txt(`${p.titulo} · ${nomeDe(p.materiaId)}`));
+    if (p.conteudo) L.push("DESCRIPTION:"+txt(p.conteudo));
+    // avisos às 9h: uma semana antes e na véspera
+    L.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" em uma semana"),"TRIGGER:-P6DT15H","END:VALARM",
+           "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" amanhã"),"TRIGGER:-PT15H","END:VALARM","END:VEVENT");
+  });
+  L.push("END:VCALENDAR");
+  return { n: itens.length, ics: L.map(dobrar).join("\r\n") + "\r\n" };
+}
+function exportarAgenda(){
+  const { n, ics } = gerarICS();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([ics], { type:"text/calendar" }));
+  a.download = "meu-semestre.ics"; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast(`${n} ${n>1?"eventos":"evento"} no arquivo. Abra para adicionar à agenda.`);
 }
 
 /* ---------- render e rotas ---------- */
@@ -602,6 +649,8 @@ $("#view").addEventListener("click", async e => {
   if (b.dataset.novo) abrirForm(b.dataset.novo, null, b.dataset.dia!=null ? {dia:b.dataset.dia} : {});
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
   else if (b.id==="cfg") abrirConfig();
+  else if (b.dataset.acao==="backup") abrirBackup();
+  else if (b.dataset.acao==="agenda") exportarAgenda();
   else if (b.id==="limparEx"){
     if (!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar: apagar exemplos"; return; }
     b.disabled = true;
