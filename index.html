@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Meu Semestre</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141a27" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Semestre">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -192,7 +198,7 @@ textarea{min-height:70px;resize:vertical}
         <h1>Meu <mark>Semestre</mark></h1>
         <div class="sub" id="hoje"></div>
       </div>
-      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="bkp">Backup</button></div>
+      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="bkp">Backup</button></div>
     </div>
     <nav id="tabs" aria-label="Seções">
       <a href="#painel">Painel</a>
@@ -983,6 +989,20 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+
+/* ---------- modo aplicativo ---------- */
+// Só no site hospedado (http/https): liga o manifesto (nome e ícone do app) e o service worker (abre sem internet).
+// Aberto direto do arquivo ou dentro do Claude, nada disso é usado.
+if (FORA_DO_CLAUDE && location.protocol.startsWith("http")){
+  [["manifest","manifest.webmanifest"],["apple-touch-icon","apple-touch-icon.png"],["icon","icon-192.png"]].forEach(([rel, href]) => {
+    const l = document.createElement("link"); l.rel = rel; l.href = href; document.head.append(l); });
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+  // Android e computador: o navegador avisa quando dá para instalar, e mostramos o botão "Instalar"
+  let pedido = null;
+  window.addEventListener("beforeinstallprompt", e => { e.preventDefault(); pedido = e; $("#instalar").hidden = false; });
+  window.addEventListener("appinstalled", () => { pedido = null; $("#instalar").hidden = true; toast("App instalado"); });
+  $("#instalar").onclick = async () => { if (!pedido) return; pedido.prompt(); await pedido.userChoice.catch(() => {}); pedido = null; $("#instalar").hidden = true; };
+}
 
 $("#hoje").textContent = new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
 render();
