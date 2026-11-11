@@ -156,6 +156,12 @@ textarea{min-height:70px;resize:vertical}
 .filter{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .filter select{width:auto}
 .need{font-size:.85rem;color:var(--muted)}
+.est{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer}
+.est input{width:18px;height:18px;margin-top:2px;flex:none}
+.est input:checked+span{color:var(--muted);text-decoration:line-through}
+.dias{display:flex;gap:6px 14px;flex-wrap:wrap}
+.dias label{display:inline-flex;align-items:center;gap:6px;font-weight:400;color:var(--fg);font-size:.92rem}
+.dias input{width:auto}
 @media (prefers-reduced-motion:no-preference){.day,.panel,.card{transition:border-color .15s}}
 </style>
 </head>
@@ -329,6 +335,90 @@ function avisoExemplo(){
 const exTag = x => x.exemplo ? ' <span class="chip hl">exemplo</span>' : "";
 
 function vCarregando(){ return '<p class="empty">Carregando seus dados…</p>'; }
+/* ---------- plano de estudo ---------- */
+// Sugestão calculada na hora, por regras fixas (sem IA): distribui sessões nos dias antes de cada
+// prova ou entrega. Só as sessões marcadas como feitas são guardadas, em config.estudoFeito.
+const PLANO_PADRAO = { dias:[0,1,2,3,4,5,6], antes:7, sessoes:4, minutos:60 };
+const planoCfg = () => ({ ...PLANO_PADRAO, ...(S.config.plano || {}) });
+function planoEstudo(){
+  const cfg = planoCfg(), hoje = hojeISO(), feito = S.config.estudoFeito || {}, carga = {}, porDia = {};
+  const add = (dia, it) => { (porDia[dia] ||= []).push(it); };
+  S.provas.filter(p => p.data && diasAte(p.data) > 0 && num(p.nota) == null).sort((a,b) => a.data.localeCompare(b.data)).forEach(p => {
+    const feitos = feito[p.id] || [];
+    feitos.filter(d => d >= hoje).forEach(d => add(d, { p, feito:true }));
+    // dias possíveis: de hoje até a véspera, dentro da antecedência, nos dias da semana escolhidos
+    const cand = [];
+    for (let n = Math.min(cfg.antes, diasAte(p.data)); n >= 1; n--){
+      const d = parseD(p.data); d.setDate(d.getDate() - n);
+      if (cfg.dias.includes(d.getDay()) && !feitos.includes(isoDe(d))) cand.push(isoDe(d));
+    }
+    const meta = p.tipo === "prova" ? cfg.sessoes : Math.max(1, cfg.sessoes - 1);
+    const alvo = Math.max(0, Math.min(meta - feitos.length, cand.length));
+    const escolhidos = [];
+    const livre = j => j >= 0 && j < cand.length && !escolhidos.includes(j) && (carga[cand[j]] || 0) < 2;
+    for (let k = 0; k < alvo; k++){
+      let i = Math.round((k + 1) * cand.length / alvo) - 1;   // espalha por igual e sempre inclui a véspera
+      if (!livre(i)){                                          // dia cheio: usa o dia livre mais próximo
+        let achou = -1;
+        for (let o = 1; o < cand.length && achou < 0; o++) achou = livre(i - o) ? i - o : livre(i + o) ? i + o : -1;
+        if (achou >= 0) i = achou; else if (escolhidos.includes(i)) continue;
+      }
+      escolhidos.push(i); carga[cand[i]] = (carga[cand[i]] || 0) + 1;
+    }
+    escolhidos.forEach(i => add(cand[i], { p, feito:false }));
+  });
+  return Object.keys(porDia).sort().map(dia => ({ dia, itens: porDia[dia] }));
+}
+function rotuloSessao(p, dia){
+  const vespera = Math.round((parseD(p.data) - parseD(dia)) / 86400000) === 1;
+  if (p.tipo === "prova") return vespera ? "Revisão final" : "Estudar";
+  return vespera ? "Finalizar e revisar" : "Adiantar";
+}
+function painelPlano(){
+  const cfg = planoCfg(), limite = (() => { const d = parseD(hojeISO()); d.setDate(d.getDate() + 13); return isoDe(d); })();
+  const dias = planoEstudo().filter(d => d.dia <= limite);
+  return `<section class="panel" style="margin-top:18px">
+    <div class="bar" style="margin-bottom:8px"><div><h3 style="margin:0">Plano de estudo</h3>
+      <div class="need">Sugestão para os próximos 14 dias: até ${cfg.sessoes} sessões de ${cfg.minutos} min antes de cada prova.</div></div>
+      <button class="ghost" data-acao="plano">Ajustar</button></div>
+    ${dias.length ? `<div class="list">${dias.map(d => { const n = diasAte(d.dia), dt = parseD(d.dia); return `
+      <div class="row" style="align-items:flex-start"><div class="count"><b>${n===0?"hoje":dt.getDate()}</b>${n===0?"":DIAS_CURTO[dt.getDay()].toLowerCase()}</div>
+        <div class="grow">${d.itens.map(it => `<label class="est"><input type="checkbox" data-estudo="${it.p.id}" data-dia="${d.dia}" ${it.feito?"checked":""}>
+          <span><span class="dot" style="background:${esc(corDe(it.p.materiaId))}"></span> <b>${esc(nomeDe(it.p.materiaId))}</b> · ${rotuloSessao(it.p, d.dia)}
+          <span class="m" style="display:block">${esc(it.p.titulo)} em ${fmtCurta(it.p.data)}</span></span></label>`).join("")}</div></div>`; }).join("")}</div>`
+      : '<p class="empty">Nenhuma prova ou entrega nos próximos dias. Nada a planejar.</p>'}
+  </section>`;
+}
+async function marcarEstudo(provaId, dia, feito){
+  const mapa = { ...(S.config.estudoFeito || {}) }, lista = (mapa[provaId] || []).filter(d => d !== dia);
+  if (feito) lista.push(dia);
+  if (lista.length) mapa[provaId] = lista; else delete mapa[provaId];
+  await salvarConfig({ ...S.config, estudoFeito: mapa });
+}
+function abrirPlano(){
+  const cfg = planoCfg(), frm = $("#frm");
+  frm.innerHTML = `<h2>Ajustar plano de estudo</h2>
+    <div class="field"><span class="label" style="text-transform:none;letter-spacing:0;font-size:.82rem">Dias em que você consegue estudar</span>
+      <div class="dias">${[1,2,3,4,5,6,0].map(d => `<label><input type="checkbox" name="pd" id="pd${d}" value="${d}" ${cfg.dias.includes(d)?"checked":""}>${DIAS_CURTO[d]}</label>`).join("")}</div></div>
+    <div class="duo"><div class="field"><label for="p_sessoes">Sessões por prova</label><input id="p_sessoes" inputmode="numeric" value="${cfg.sessoes}"></div>
+      <div class="field"><label for="p_min">Minutos por sessão</label><input id="p_min" inputmode="numeric" value="${cfg.minutos}"></div></div>
+    <div class="field"><label for="p_antes">Começar quantos dias antes</label><input id="p_antes" inputmode="numeric" value="${cfg.antes}"><span class="need">Entregas recebem uma sessão a menos que as provas.</span></div>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Salvar</button></div></div>`;
+  frm.onsubmit = async e => { e.preventDefault();
+    const dias = [...frm.querySelectorAll('input[name="pd"]:checked')].map(i => +i.value);
+    const sessoes = num($("#p_sessoes").value), minutos = num($("#p_min").value), antes = num($("#p_antes").value);
+    const inteiro = (v, a, b) => v != null && Number.isInteger(v) && v >= a && v <= b;
+    if (!dias.length){ mostrarErro("pd1", "Escolha pelo menos um dia da semana."); return; }
+    if (!inteiro(sessoes, 1, 10)){ mostrarErro("p_sessoes", "Sessões por prova: um número inteiro de 1 a 10."); return; }
+    if (!inteiro(minutos, 10, 300)){ mostrarErro("p_min", "Minutos por sessão: um número inteiro de 10 a 300."); return; }
+    if (!inteiro(antes, 1, 30)){ mostrarErro("p_antes", "Dias de antecedência: um número inteiro de 1 a 30."); return; }
+    await salvarConfig({ ...S.config, plano:{ dias, sessoes, minutos, antes } });
+    $("#dlg").close(); toast("Salvo"); };
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#dlg").showModal();
+}
+
 function vPainel(){
   const hoje = new Date().getDay();
   const blocos = S.cronograma.filter(b => +b.dia === hoje).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
@@ -369,6 +459,7 @@ function vPainel(){
         : `<p class="empty">Nenhuma prova, entrega ou evento à frente.</p>`}
     </section>
   </div>
+  ${painelPlano()}
   <section class="panel" style="margin-top:18px">
     <div class="bar" style="margin-bottom:8px"><h3>Situação por matéria</h3><span class="need">Média mínima <b class="num">${fmt(S.config.mediaMin)}</b> · frequência mínima <b class="num">${S.config.freqMin}%</b> <button class="ghost" id="cfg">Ajustar</button></span></div>
     ${S.materias.length ? `<div class="tbl-wrap"><table><thead><tr><th>Matéria</th><th>Média atual</th><th>Faltas / limite</th></tr></thead><tbody>${linhasMat}</tbody></table></div>`
@@ -619,7 +710,7 @@ function abrirConfig(){
     const mediaMin = num($("#c_media").value), freqMin = num($("#c_freq").value);
     if (mediaMin == null || mediaMin < 0 || mediaMin > 10){ mostrarErro("c_media", "A média mínima precisa ficar entre 0 e 10."); return; }
     if (freqMin == null || freqMin < 1 || freqMin > 100){ mostrarErro("c_freq", "A frequência mínima precisa ficar entre 1 e 100."); return; }
-    await salvarConfig({ mediaMin, freqMin });
+    await salvarConfig({ ...S.config, mediaMin, freqMin });
     $("#dlg").close(); toast("Salvo"); };
   $("#cancel").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
@@ -732,6 +823,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.id==="cfg") abrirConfig();
   else if (b.dataset.acao==="backup") abrirBackup();
   else if (b.dataset.acao==="agenda") exportarAgenda();
+  else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.id==="limparEx"){
     if (!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar: apagar exemplos"; return; }
     b.disabled = true;
@@ -739,7 +831,10 @@ $("#view").addEventListener("click", async e => {
     toast("Exemplos apagados");
   }
 });
-$("#view").addEventListener("change", e => { if (e.target.id==="fProva"){ filtroProvas = e.target.value; render(); } });
+$("#view").addEventListener("change", e => {
+  if (e.target.id==="fProva"){ filtroProvas = e.target.value; render(); }
+  else if (e.target.dataset.estudo) marcarEstudo(e.target.dataset.estudo, e.target.dataset.dia, e.target.checked);
+});
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
 
