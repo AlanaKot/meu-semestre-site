@@ -106,6 +106,27 @@ tr:last-child td{border-bottom:0}
 .blk .n{font-weight:600;overflow-wrap:anywhere}
 .blk .p{color:var(--muted);overflow-wrap:anywhere}
 @media (max-width:760px){.week{grid-template-columns:1fr;overflow-x:visible}.day{min-height:0}}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;border-radius:0;background:var(--surface);color:var(--muted)}
+.seg button[aria-pressed="true"],.seg button[aria-pressed="true"]:hover{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.mesnav{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mesnav h2{min-width:9.5em}
+.mes{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;margin-bottom:12px}
+.mh{background:var(--surface-2);padding:6px 8px;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.mc{background:var(--surface);min-height:98px;padding:6px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.mc.fora{background:var(--bg)}
+.mc.fora .mn{color:var(--muted)}
+.mn{border:0;background:transparent;padding:0;width:28px;height:28px;border-radius:50%;font-family:var(--f-mono);font-size:.82rem;align-self:flex-start}
+.mc.hoje .mn,.mc.hoje .mn:hover{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.mi{border:1px solid transparent;border-radius:4px;padding:2px 6px;font-size:.72rem;text-align:left;line-height:1.3;width:100%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:none}
+button.mi-prova,button.mi-prova:hover{background:var(--accent);color:var(--accent-ink)}
+button.mi-entrega,button.mi-entrega:hover{border-color:var(--accent);background:var(--surface)}
+button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
+.mi:hover{filter:brightness(.94)}
+.leg{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-bottom:18px}
+.leg span{display:inline-flex;align-items:center;gap:6px}
+.leg i{width:14px;height:10px;border-radius:3px;border:1px solid transparent}
+@media (max-width:760px){.mc{min-height:60px;padding:4px;gap:3px}.mh{padding:6px 2px;text-align:center}.mi{height:7px;padding:0}.mi .mt{display:none}}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .card>.t::before,.card .bar .t::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px}
@@ -169,12 +190,12 @@ textarea{min-height:70px;resize:vertical}
 const DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
-const COLS = ["materias","cronograma","faltas","provas"];
+const COLS = ["materias","cronograma","faltas","provas","eventos"];
 const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], config:{ mediaMin:6, freqMin:75 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], config:{ mediaMin:6, freqMin:75 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -185,6 +206,9 @@ const fmt = (n, d=1) => n == null ? "—" : n.toLocaleString("pt-BR",{minimumFra
 const parseD = s => { const [y,m,d] = s.split("-").map(Number); return new Date(y, m-1, d); };
 const hojeISO = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 const fmtData = s => s ? parseD(s).toLocaleDateString("pt-BR",{weekday:"short",day:"2-digit",month:"short"}) : "sem data";
+const fmtCurta = s => parseD(s).toLocaleDateString("pt-BR",{day:"2-digit",month:"short"});
+const isoDe = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+const periodo = e => e.dataFim && e.dataFim !== e.data ? `${fmtCurta(e.data)} a ${fmtCurta(e.dataFim)}` : fmtData(e.data);
 const diasAte = s => Math.round((parseD(s) - parseD(hojeISO())) / 86400000);
 const mat = id => S.materias.find(m => m.id === id);
 const corDe = id => mat(id)?.cor || "#6b7a8f";
@@ -308,8 +332,11 @@ function vCarregando(){ return '<p class="empty">Carregando seus dados…</p>'; 
 function vPainel(){
   const hoje = new Date().getDay();
   const blocos = S.cronograma.filter(b => +b.dia === hoje).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
-  const proximas = S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null)
-    .sort((a,b) => a.data.localeCompare(b.data)).slice(0,6);
+  const proximas = [
+    ...S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null).map(p => ({ data:p.data, t:esc(p.titulo)+exTag(p),
+      sub:`<span class="dot" style="background:${esc(corDe(p.materiaId))}"></span> ${esc(nomeDe(p.materiaId))} · ${fmtData(p.data)}` })),
+    ...S.eventos.filter(e => e.data && diasAte(e.dataFim || e.data) >= 0).map(e => ({ data:e.data, t:esc(e.titulo)+exTag(e), sub:`Evento · ${periodo(e)}` })),
+  ].sort((a,b) => a.data.localeCompare(b.data)).slice(0,6);
   const linhasMat = S.materias.map(m => {
     const n = resumoNotas(m.id), f = resumoFaltas(m.id);
     const pct = f.limite ? Math.min(100, f.total / f.limite * 100) : 0;
@@ -334,12 +361,12 @@ function vPainel(){
         : `<p class="empty">Nada marcado para hoje. Use o Cronograma para montar sua semana.</p>`}
     </section>
     <section class="panel">
-      <div class="bar" style="margin-bottom:8px"><h3>Próximas provas e entregas</h3><button class="ghost" data-novo="provas">+ Prova</button></div>
-      ${proximas.length ? `<div class="list">${proximas.map(p => { const d = diasAte(p.data); return `
+      <div class="bar" style="margin-bottom:8px"><h3>Próximos compromissos</h3><button class="ghost" data-novo="provas">+ Prova</button></div>
+      ${proximas.length ? `<div class="list">${proximas.map(p => { const real = diasAte(p.data), d = Math.max(0, real); return `
         <div class="row"><div class="count"><b>${d===0?"hoje":d}</b>${d===0?"":d===1?"dia":"dias"}</div>
-          <div class="grow"><div class="t">${esc(p.titulo)}${exTag(p)}</div><div class="m"><span class="dot" style="background:${esc(corDe(p.materiaId))}"></span> ${esc(nomeDe(p.materiaId))} · ${fmtData(p.data)}</div></div>
-          ${chipPrazo(p.data)}</div>`; }).join("")}</div>`
-        : `<p class="empty">Nenhuma prova futura sem nota.</p>`}
+          <div class="grow"><div class="t">${p.t}</div><div class="m">${p.sub}</div></div>
+          ${real < 0 ? '<span class="chip">acontecendo</span>' : chipPrazo(p.data)}</div>`; }).join("")}</div>`
+        : `<p class="empty">Nenhuma prova, entrega ou evento à frente.</p>`}
     </section>
   </div>
   <section class="panel" style="margin-top:18px">
@@ -351,7 +378,48 @@ function vPainel(){
 
 const rotTipo = t => ({aula:"Aula",estudo:"Estudo",revisao:"Revisão",lista:"Lista de exercícios"}[t] || "Estudo");
 
+let visCron = "semana"; try { visCron = localStorage.getItem("meu-semestre-vis") === "mes" ? "mes" : "semana"; } catch(e){}
+let mesRef = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+const seletorVis = () => `<div class="seg" role="group" aria-label="Visão"><button data-vis="semana" aria-pressed="${visCron==="semana"}">Semana</button><button data-vis="mes" aria-pressed="${visCron==="mes"}">Mês</button></div>`;
+const temAgenda = () => S.provas.some(p => p.data && diasAte(p.data) >= 0) || S.eventos.some(e => e.data && diasAte(e.dataFim || e.data) >= 0);
+const botaoAgenda = () => FORA_DO_CLAUDE && temAgenda() ? '<button data-acao="agenda">Enviar para a agenda</button>' : "";
+// provas, entregas e eventos de um dia
+function itensDoDia(iso){
+  return [
+    ...S.provas.filter(p => p.data === iso).map(p => ({ tipo: p.tipo === "prova" ? "prova" : "entrega", t:p.titulo, sub:nomeDe(p.materiaId), col:"provas", id:p.id })),
+    ...S.eventos.filter(e => e.data && e.data <= iso && iso <= (e.dataFim || e.data)).map(e => ({ tipo:"evento", t:e.titulo, sub:"", col:"eventos", id:e.id })),
+  ];
+}
+const ROT_ITEM = { prova:"Prova", entrega:"Entrega", evento:"Evento" };
+function vMes(){
+  const y = mesRef.getFullYear(), m = mesRef.getMonth(), hoje = hojeISO();
+  const diasNoMes = new Date(y, m+1, 0).getDate(), semanas = Math.ceil((mesRef.getDay() + diasNoMes) / 7);
+  let celulas = "";
+  for (let i = 0; i < semanas * 7; i++){
+    const d = new Date(y, m, 1 - mesRef.getDay() + i), iso = isoDe(d);
+    celulas += `<div class="mc ${d.getMonth()!==m?"fora":""} ${iso===hoje?"hoje":""}">
+      <button class="mn" data-novo="eventos" data-data="${iso}" aria-label="Adicionar evento em ${d.getDate()} de ${d.toLocaleDateString("pt-BR",{month:"long"})}">${d.getDate()}</button>
+      ${itensDoDia(iso).map(it => `<button class="mi mi-${it.tipo}" data-edit="${it.col}" data-id="${it.id}" title="${esc(ROT_ITEM[it.tipo]+": "+it.t+(it.sub?" · "+it.sub:""))}"><span class="mt">${esc(it.t)}${it.sub?" · "+esc(it.sub):""}</span></button>`).join("")}
+    </div>`;
+  }
+  const ini = isoDe(mesRef), fim = isoDe(new Date(y, m+1, 0));
+  const lista = [
+    ...S.provas.filter(p => p.data && p.data >= ini && p.data <= fim).map(p => ({ data:p.data, tipo: p.tipo === "prova" ? "prova" : "entrega", t:esc(p.titulo)+exTag(p), sub:esc(nomeDe(p.materiaId))+" · "+fmtData(p.data), col:"provas", id:p.id })),
+    ...S.eventos.filter(e => e.data && e.data <= fim && (e.dataFim || e.data) >= ini).map(e => ({ data:e.data, tipo:"evento", t:esc(e.titulo)+exTag(e), sub:periodo(e)+(e.obs?" · "+esc(e.obs):""), col:"eventos", id:e.id })),
+  ].sort((a,b) => a.data.localeCompare(b.data));
+  return `${avisoExemplo()}
+  <div class="bar"><div class="mesnav"><h2>${mesRef.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}).replace(/^./, c => c.toUpperCase())}</h2>
+      <button data-mes="-1" aria-label="Mês anterior">‹</button><button data-mes="0">Hoje</button><button data-mes="1" aria-label="Próximo mês">›</button></div>
+    <div class="filter">${seletorVis()}${botaoAgenda()}<button class="primary" data-novo="eventos">+ Evento</button></div></div>
+  <div class="mes">${DIAS_CURTO.map(d => `<div class="mh">${d}</div>`).join("")}${celulas}</div>
+  <div class="leg"><span><i style="background:var(--accent)"></i>Prova</span><span><i style="border-color:var(--accent)"></i>Entrega</span><span><i style="background:var(--surface-2);border-color:var(--line)"></i>Evento</span><span>Toque no número do dia para criar um evento.</span></div>
+  <section class="panel"><h3>Neste mês</h3>${lista.length ? `<div class="list">${lista.map(it => `
+    <div class="row"><div class="count"><b>${parseD(it.data).getDate()}</b>${DIAS_CURTO[parseD(it.data).getDay()].toLowerCase()}</div>
+      <div class="grow"><div class="t">${it.t} <span class="chip">${ROT_ITEM[it.tipo]}</span></div><div class="m">${it.sub}</div></div>
+      <button class="ghost" data-edit="${it.col}" data-id="${it.id}">Editar</button></div>`).join("")}</div>` : '<p class="empty">Nada marcado neste mês.</p>'}</section>`;
+}
 function vCronograma(){
+  if (visCron === "mes") return vMes();
   const hoje = new Date().getDay();
   const ordem = [1,2,3,4,5,6,0];
   const horas = S.cronograma.filter(b => b.tipo !== "aula").reduce((a,b) => {
@@ -359,7 +427,7 @@ function vCronograma(){
     return a + Math.max(0,(h2*60+m2)-(h1*60+m1)); },0) / 60;
   return `${avisoExemplo()}
   <div class="bar"><div><h2>Cronograma semanal</h2><div class="need">Estudo planejado: <b class="num">${fmt(horas)} h</b> por semana (sem contar aulas)</div></div>
-    <button class="primary" data-novo="cronograma">+ Bloco</button></div>
+    <div class="filter">${seletorVis()}<button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
   <div class="week">${ordem.map(d => {
     const bl = S.cronograma.filter(b => +b.dia === d).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
     return `<div class="day ${d===hoje?"today":""}"><h3><span>${DIAS[d]}</span><button class="ghost" data-novo="cronograma" data-dia="${d}" aria-label="Adicionar em ${DIAS[d]}">+</button></h3>
@@ -385,7 +453,7 @@ function vProvas(){
   return `${avisoExemplo()}
   <div class="bar"><h2>Provas e notas</h2>
     <div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select>
-    ${FORA_DO_CLAUDE && S.provas.some(p => p.data && diasAte(p.data) >= 0) ? '<button data-acao="agenda">Enviar para a agenda</button>' : ""}
+    ${botaoAgenda()}
     <button class="primary" data-novo="provas">+ Prova ou trabalho</button></div></div>
   ${cards?`<div class="panel stats" style="margin-bottom:18px">${cards}</div>`:""}
   <div class="grid2">
@@ -447,6 +515,10 @@ const FORMS = {
     {duo:[{k:"data",l:"Data",t:"date",def:hojeISO},{k:"aulas",l:"Aulas perdidas",t:"num",def:"2"}]},
     {k:"justificada",l:"Falta justificada (não conta no limite)",t:"check"},
     {k:"obs",l:"Observação",t:"text"} ]},
+  eventos: { titulo:"Evento", masc:true, campos:[
+    {k:"titulo",l:"Nome do evento",t:"text",req:1,ph:"Ex.: Semana do Contador"},
+    {duo:[{k:"data",l:"Dia",t:"date",def:hojeISO},{k:"dataFim",l:"Até (opcional)",t:"date"}]},
+    {k:"obs",l:"Observação",t:"text"} ]},
   provas: { titulo:"Prova ou trabalho", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
     {k:"titulo",l:"Título",t:"text",req:1,ph:"Ex.: P1, Trabalho final"},
@@ -481,6 +553,10 @@ function validar(col, out, raw){
     if (!out.data) return ["data", "Informe a data da falta."];
     if (out.aulas == null || out.aulas < 1) return ["aulas", "Informe quantas aulas você perdeu (1 ou mais)."];
   }
+  if (col==="eventos"){
+    if (!out.data) return ["data", "Informe o dia do evento."];
+    if (out.dataFim && out.dataFim < out.data) return ["dataFim", "O último dia precisa ser igual ou depois do primeiro."];
+  }
   if (col==="provas"){
     if (out.notaMax == null || out.notaMax <= 0) return ["notaMax", "Informe quanto a avaliação vale (maior que zero)."];
     if (out.peso == null || out.peso <= 0) return ["peso", "O peso precisa ser maior que zero."];
@@ -495,11 +571,11 @@ function mostrarErro(campoId, msg){
 
 function abrirForm(col, id, preset={}){
   const F = FORMS[col], item = id ? S[col].find(x=>x.id===id) : null;
-  if (col!=="materias" && !S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
+  if (col!=="materias" && col!=="eventos" && !S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
   const dados = { ...preset, ...(item||{}) };
   const campos = F.campos.map(c => c.duo ? `<div class="duo">${c.duo.map(d=>campoHTML(d,dados[d.k])).join("")}</div>` : campoHTML(c, dados[c.k])).join("");
   const frm = $("#frm");
-  frm.innerHTML = `<h2>${id?"Editar":"Nova"} ${F.titulo.toLowerCase()}</h2>${campos}
+  frm.innerHTML = `<h2>${id?"Editar":F.masc?"Novo":"Nova"} ${F.titulo.toLowerCase()}</h2>${campos}
     <p class="erro" id="erro" role="alert" hidden></p>
     <div class="actions">${id?`<button type="button" class="danger" id="del">Excluir</button>`:"<span></span>"}
       <div class="r"><button type="button" id="cancel">Cancelar</button><button type="submit" class="primary">Salvar</button></div></div>`;
@@ -602,11 +678,14 @@ function gerarICS(){
   // linhas longas são quebradas, como o formato pede
   const dobrar = l => { const ch = [...l], partes = []; while (ch.length > 60) partes.push(ch.splice(0, 60).join("")); partes.push(ch.join("")); return partes.join("\r\n "); };
   const L = ["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Meu Semestre//PT-BR","CALSCALE:GREGORIAN","X-WR-CALNAME:Meu Semestre"];
-  const itens = S.provas.filter(p => p.data && diasAte(p.data) >= 0).sort((a,b) => a.data.localeCompare(b.data));
+  const itens = [
+    ...S.provas.filter(p => p.data && diasAte(p.data) >= 0).map(p => ({ id:p.id, data:p.data, fim:p.data, titulo:p.titulo, resumo:`${p.titulo} · ${nomeDe(p.materiaId)}`, conteudo:p.conteudo })),
+    ...S.eventos.filter(e => e.data && diasAte(e.dataFim || e.data) >= 0).map(e => ({ id:e.id, data:e.data, fim:e.dataFim || e.data, titulo:e.titulo, resumo:e.titulo, conteudo:e.obs })),
+  ].sort((a,b) => a.data.localeCompare(b.data));
   itens.forEach(p => {
     L.push("BEGIN:VEVENT", "UID:"+p.id+"@meu-semestre", "DTSTAMP:"+agora,
-      "DTSTART;VALUE=DATE:"+dia(p.data), "DTEND;VALUE=DATE:"+seguinte(p.data),
-      "SUMMARY:"+txt(`${p.titulo} · ${nomeDe(p.materiaId)}`));
+      "DTSTART;VALUE=DATE:"+dia(p.data), "DTEND;VALUE=DATE:"+seguinte(p.fim),
+      "SUMMARY:"+txt(p.resumo));
     if (p.conteudo) L.push("DESCRIPTION:"+txt(p.conteudo));
     // avisos às 9h: uma semana antes e na véspera
     L.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" em uma semana"),"TRIGGER:-P6DT15H","END:VALARM",
@@ -646,7 +725,9 @@ window.addEventListener("resize", navFade);
 
 $("#view").addEventListener("click", async e => {
   const b = e.target.closest("button"); if (!b) return;
-  if (b.dataset.novo) abrirForm(b.dataset.novo, null, b.dataset.dia!=null ? {dia:b.dataset.dia} : {});
+  if (b.dataset.novo) abrirForm(b.dataset.novo, null, { ...(b.dataset.dia!=null ? {dia:b.dataset.dia} : {}), ...(b.dataset.data ? {data:b.dataset.data} : {}) });
+  else if (b.dataset.vis){ visCron = b.dataset.vis; try { localStorage.setItem("meu-semestre-vis", visCron); } catch(e){} render(); }
+  else if (b.dataset.mes){ const n = +b.dataset.mes, h = new Date(); mesRef = n ? new Date(mesRef.getFullYear(), mesRef.getMonth()+n, 1) : new Date(h.getFullYear(), h.getMonth(), 1); render(); }
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
   else if (b.id==="cfg") abrirConfig();
   else if (b.dataset.acao==="backup") abrirBackup();
