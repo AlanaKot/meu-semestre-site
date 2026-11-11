@@ -159,6 +159,7 @@ textarea{min-height:70px;resize:vertical}
 .est{display:flex;gap:10px;align-items:flex-start;padding:5px 0;cursor:pointer}
 .est input{width:18px;height:18px;margin-top:2px;flex:none}
 .est input:checked+span{color:var(--muted);text-decoration:line-through}
+.est.manter input:checked+span{color:inherit;text-decoration:none;font-weight:600}
 .dias{display:flex;gap:6px 14px;flex-wrap:wrap}
 .dias label{display:inline-flex;align-items:center;gap:6px;font-weight:400;color:var(--fg);font-size:.92rem}
 .dias input{width:auto}
@@ -716,31 +717,71 @@ function abrirConfig(){
   $("#dlg").showModal();
 }
 
+// Baixa o backup. Devolve true quando o arquivo foi entregue.
+async function baixarBackup(){
+  const data = JSON.stringify({ app:"meu-semestre", versao:1, ...Object.fromEntries(COLS.map(c=>[c,S[c]])), config:S.config }, null, 2);
+  const nome = "meu-semestre-"+hojeISO()+".json";
+  if (!window.claude){
+    // fora do Claude (site próprio ou arquivo aberto no navegador): download direto
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([data], { type:"application/json" }));
+    a.download = nome; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    marcarBackup(); render(); toast("Backup baixado"); return true;
+  }
+  const dl = await window.claude?.use?.("downloads").catch(()=>null);
+  if (!dl){ try { await navigator.clipboard.writeText(data); toast("Backup copiado. Cole num arquivo .json"); return true; } catch(e){ toast("Não foi possível baixar aqui."); return false; } }
+  try { await dl.save({ filename:nome, data }); toast("Backup salvo"); return true; }
+  catch(e){ if (e.code!=="declined") toast("Não foi possível salvar o arquivo."); return false; }
+}
+// Novo semestre: guarda um backup, mantém as matérias marcadas (as anuais) com tudo que é delas
+// e apaga as outras, junto com os eventos que já passaram.
+function abrirNovoSemestre(){
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Começar novo semestre</h2>
+    <p class="need">Marque as matérias que <b>continuam</b>, como as anuais. Elas ficam como estão, com aulas, notas e faltas. As outras são apagadas com tudo que é delas, e os eventos que já passaram também.</p>
+    <div class="field">${S.materias.length ? S.materias.map(m => `<label class="est manter"><input type="checkbox" name="manter" value="${m.id}"><span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}</span></label>`).join("") : '<span class="need">Nenhuma matéria cadastrada.</span>'}</div>
+    <p class="need" id="nsResumo"></p>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button type="submit" class="danger" id="nsOk">Baixar backup e limpar</button></div></div>`;
+  const plano = () => {
+    const manter = new Set([...frm.querySelectorAll('input[name="manter"]:checked')].map(i => i.value));
+    const sai = S.materias.filter(m => !manter.has(m.id)).map(m => m.id);
+    const lista = [
+      ...["cronograma","faltas","provas"].flatMap(c => S[c].filter(x => sai.includes(x.materiaId) || !mat(x.materiaId)).map(x => [c, x.id])),
+      ...S.eventos.filter(e => diasAte(e.dataFim || e.data || hojeISO()) < 0).map(e => ["eventos", e.id]),
+      ...sai.map(id => ["materias", id]),
+    ];
+    return { sai, lista };
+  };
+  const ok = $("#nsOk");
+  const resumo = () => { if (!ok.isConnected) return; const { sai, lista } = plano(); delete ok.dataset.arm; ok.textContent = "Baixar backup e limpar";
+    $("#nsResumo").textContent = lista.length ? `Serão apagados ${lista.length} itens: ${sai.length} ${sai.length===1?"matéria":"matérias"} e o que pertence a ${sai.length===1?"ela":"elas"}, mais eventos passados.` : "Nada a apagar."; };
+  frm.onchange = resumo; resumo();
+  frm.onsubmit = async e => { e.preventDefault();
+    const { lista } = plano();
+    if (!lista.length){ mostrarErro("nsOk", "Não há nada para apagar."); return; }
+    if (!ok.dataset.arm){ ok.dataset.arm = 1; ok.textContent = `Confirmar: apagar ${lista.length} itens`; return; }
+    ok.disabled = true;
+    if (!(await baixarBackup())){ ok.disabled = false; mostrarErro("nsOk", "O backup não foi salvo, então nada foi apagado."); return; }
+    const provasFora = new Set(lista.filter(([c]) => c === "provas").map(([, id]) => id));
+    for (const [c, id] of lista) await apagar(c, id);
+    const feito = Object.fromEntries(Object.entries(S.config.estudoFeito || {}).filter(([id]) => !provasFora.has(id)));
+    await salvarConfig({ ...S.config, estudoFeito: feito });
+    $("#dlg").close(); toast("Novo semestre pronto"); };
+  $("#cancel").onclick = () => $("#dlg").close();
+}
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
     <p class="need">Baixe um arquivo com matérias, cronograma, faltas e notas. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label><input type="file" id="bkFile" accept=".json,application/json"><span class="need">Junta com o que já existe; itens com o mesmo código são substituídos.</span></div>
-    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+    <div class="actions"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
   frm.onsubmit = e => e.preventDefault();
   $("#cancel").onclick = () => $("#dlg").close();
-  $("#bkDown").onclick = async () => {
-    const data = JSON.stringify({ app:"meu-semestre", versao:1, ...Object.fromEntries(COLS.map(c=>[c,S[c]])), config:S.config }, null, 2);
-    const nome = "meu-semestre-"+hojeISO()+".json";
-    if (!window.claude){
-      // fora do Claude (site próprio ou arquivo aberto no navegador): download direto
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([data], { type:"application/json" }));
-      a.download = nome; document.body.append(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-      marcarBackup(); render(); toast("Backup baixado"); return;
-    }
-    const dl = await window.claude?.use?.("downloads").catch(()=>null);
-    if (!dl){ try { await navigator.clipboard.writeText(data); toast("Backup copiado. Cole num arquivo .json"); } catch(e){ toast("Não foi possível baixar aqui."); } return; }
-    try { await dl.save({ filename:nome, data }); toast("Backup salvo"); }
-    catch(e){ if (e.code!=="declined") toast("Não foi possível salvar o arquivo."); }
-  };
+  $("#bkDown").onclick = baixarBackup;
+  $("#novoSem").onclick = abrirNovoSemestre;
   $("#bkFile").onchange = e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
