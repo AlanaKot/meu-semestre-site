@@ -137,6 +137,8 @@ button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .card>.t::before,.card .bar .t::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px}
 .stats{display:flex;gap:18px;flex-wrap:wrap}
+.foco{display:flex;gap:12px 18px;align-items:flex-end;flex-wrap:wrap;justify-content:space-between}
+.foco .relogio{font-family:var(--f-mono);font-size:2.4rem;font-weight:600;line-height:1;color:var(--ink)}
 .stat .v{font-family:var(--f-mono);font-size:1.3rem;font-weight:600}
 .big{font-family:var(--f-mono);font-weight:600;font-size:1.05rem}
 .count{font-family:var(--f-mono);font-size:.78rem;min-width:62px;text-align:right;color:var(--muted)}
@@ -240,12 +242,12 @@ textarea{min-height:70px;resize:vertical}
 const DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
-const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas"];
+const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas","sessoes"];
 const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], sessoes:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -714,6 +716,7 @@ function vPainel(){
     </section>
   </div>
   ${painelTarefas()}
+  ${painelFoco()}
   ${painelPlano()}
   <section class="panel" style="margin-top:18px">
     <div class="bar" style="margin-bottom:8px"><h3>Situação por matéria</h3><span class="need">Média mínima <b class="num">${fmt(S.config.mediaMin)}</b> · frequência mínima <b class="num">${S.config.freqMin}%</b> <button class="ghost" id="cfg">Ajustar</button></span></div>
@@ -844,6 +847,114 @@ function vMaterias(){
       ${blocoNotas(m)}
     </div>`; }).join("") || '<p class="empty">Comece cadastrando as matérias do semestre.</p>'}</div>
   ${blocoHistorico()}`;
+}
+
+/* ---------- cronômetro de estudo (Pomodoro) ---------- */
+// 25 min de estudo e 5 de pausa. O estado do cronômetro fica só neste aparelho (localStorage),
+// guardando a hora em que a fase acaba: assim ele continua certo mesmo se a página recarregar.
+// Cada estudo terminado vira um item em "sessoes" (entra no backup e na sincronização).
+const FOCO_EST = 25, FOCO_PAUSA = 5, LS_FOCO = "meu-semestre-foco";
+let foco = {}; try { foco = JSON.parse(localStorage.getItem(LS_FOCO)) || {}; } catch(e){}
+const guardarFoco = () => { try { localStorage.setItem(LS_FOCO, JSON.stringify(foco)); } catch(e){} };
+let somCtx = null;
+const restaFoco = () => Math.max(0, foco.pausado ?? (foco.fim - Date.now()));
+const relogio = ms => { const t = Math.ceil(ms / 1000); return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); };
+const horasMin = m => m >= 60 ? `${Math.floor(m / 60)}h${m % 60 ? " " + (m % 60) + "min" : ""}` : `${m}min`;
+function bipe(){
+  try {
+    if (!somCtx) return;
+    [0, 0.35, 0.7].forEach(t => {
+      const o = somCtx.createOscillator(), g = somCtx.createGain();
+      o.frequency.value = 880; g.gain.setValueAtTime(0.2, somCtx.currentTime + t); g.gain.exponentialRampToValueAtTime(0.001, somCtx.currentTime + t + 0.3);
+      o.connect(g).connect(somCtx.destination); o.start(somCtx.currentTime + t); o.stop(somCtx.currentTime + t + 0.3);
+    });
+  } catch(e){}
+}
+async function avisarFoco(titulo, corpo){
+  bipe();
+  if (!("Notification" in window) || Notification.permission !== "granted") { toast(titulo); return; }
+  const op = { body: corpo, icon: "icon-192.png", tag: "meu-semestre-foco" };
+  try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg){ await reg.showNotification(titulo, op); return; } } catch(e){}
+  try { new Notification(titulo, op); } catch(e){ toast(titulo); }
+}
+function minutosSemana(){
+  const ini = semanaDe(hojeISO()), tot = {};
+  S.sessoes.filter(x => x.data && semanaDe(x.data).getTime() === ini.getTime() && mat(x.materiaId))
+    .forEach(x => tot[x.materiaId] = (tot[x.materiaId] || 0) + (num(x.minutos) || 0));
+  return Object.entries(tot).sort((a, b) => b[1] - a[1]);
+}
+function painelFoco(){
+  if (!S.materias.length) return "";
+  const sem = minutosSemana(), max = Math.max(1, ...sem.map(x => x[1]));
+  let topo;
+  if (foco.fase){
+    const estudo = foco.fase === "estudo";
+    topo = `<div class="foco"><div><div class="label">${estudo ? "Estudando" : "Pausa"}</div>
+        <div class="t"><span class="dot" style="background:${esc(corDe(foco.materiaId))}"></span> ${esc(nomeDe(foco.materiaId))}</div></div>
+      <div class="relogio num" id="focoRelogio">${relogio(restaFoco())}</div>
+      <div class="filter">${estudo ? `<button data-acao="focoPausar">${foco.pausado != null ? "Continuar" : "Pausar"}</button><button class="ghost" data-acao="focoParar">Parar</button>`
+        : `<button data-acao="focoPular">Pular pausa</button>`}</div></div>`;
+  } else {
+    const ultima = mat(foco.ultimaMat) ? foco.ultimaMat : S.materias[0].id;
+    topo = `<div class="foco"><div class="field" style="margin:0;flex:1;min-width:160px"><label for="focoMat">Matéria</label>
+        <select id="focoMat">${S.materias.map(m => `<option value="${m.id}" ${m.id === ultima ? "selected" : ""}>${esc(m.nome)}</option>`).join("")}</select></div>
+      <button class="primary" data-acao="focoIniciar">Começar ${FOCO_EST} min</button></div>`;
+  }
+  return `<section class="panel" style="margin-top:18px">
+    <div class="bar" style="margin-bottom:8px"><div><h3 style="margin:0">Cronômetro de estudo</h3>
+      <div class="need">${FOCO_EST} min de estudo e ${FOCO_PAUSA} de pausa. Se parar antes, guarda os minutos já estudados.</div></div></div>
+    ${topo}
+    <h3 style="margin-top:14px;font-size:.95rem">Esta semana${sem.length ? ` · <span class="num">${horasMin(sem.reduce((a, x) => a + x[1], 0))}</span>` : ""}</h3>
+    ${sem.length ? `<div class="list">${sem.map(([id, m]) => `<div class="row" style="display:block">
+        <div class="bar" style="margin:0"><span><span class="dot" style="background:${esc(corDe(id))}"></span> ${esc(nomeDe(id))}</span><span class="num">${horasMin(m)}</span></div>
+        <div class="meter"><i style="width:${m / max * 100}%;background:${esc(corDe(id))}"></i></div></div>`).join("")}</div>`
+      : '<p class="empty">Nenhum estudo com o cronômetro nesta semana.</p>'}
+  </section>`;
+}
+async function salvarSessao(materiaId, minutos, dia){
+  if (minutos >= 1) await salvar("sessoes", null, { materiaId, data: dia || hojeISO(), minutos });
+}
+// confere se uma fase acabou (também depois de a página ficar fechada)
+async function conferirFoco(){
+  if (mode === "carregando" || !foco.fase || foco.pausado != null || Date.now() < foco.fim) return;
+  const aoVivo = Date.now() - foco.fim < 5000;
+  if (foco.fase === "estudo"){
+    const { materiaId, fim } = foco;
+    foco = { fase:"pausa", materiaId, ultimaMat: materiaId, fim: fim + FOCO_PAUSA * 60000 }; guardarFoco();
+    await salvarSessao(materiaId, FOCO_EST, isoDe(new Date(fim)));
+    if (aoVivo) avisarFoco("Hora da pausa", `${FOCO_EST} min de ${nomeDe(materiaId)} concluídos. Descanse ${FOCO_PAUSA} min.`);
+    return conferirFoco();
+  }
+  foco = { ultimaMat: foco.materiaId }; guardarFoco();
+  if (aoVivo) avisarFoco("Pausa acabou", "Pronta para mais uma rodada?");
+  render();
+}
+function tiqueFoco(){
+  if (!foco.fase) { if (document.title !== "Meu Semestre") document.title = "Meu Semestre"; return; }
+  const el = $("#focoRelogio"), txt = relogio(restaFoco());
+  if (el) el.textContent = txt;
+  document.title = `${txt} · ${foco.fase === "estudo" ? "Estudando" : "Pausa"}`;
+  conferirFoco();
+}
+setInterval(tiqueFoco, 1000);
+function acaoFoco(acao){
+  if (acao === "focoIniciar"){
+    const materiaId = $("#focoMat")?.value; if (!materiaId) return;
+    // o som e a permissão de notificação precisam ser liberados num toque
+    try { somCtx = somCtx || new (window.AudioContext || window.webkitAudioContext)(); somCtx.resume(); } catch(e){}
+    if ("Notification" in window && Notification.permission === "default") Notification.requestPermission().catch(() => {});
+    foco = { fase:"estudo", materiaId, ultimaMat: materiaId, inicio: Date.now(), fim: Date.now() + FOCO_EST * 60000 };
+  } else if (acao === "focoPausar"){
+    if (foco.pausado != null){ foco.fim = Date.now() + foco.pausado; delete foco.pausado; }
+    else foco.pausado = foco.fim - Date.now();
+  } else if (acao === "focoParar"){
+    // guarda os minutos inteiros já estudados
+    const feitos = Math.floor((FOCO_EST * 60000 - restaFoco()) / 60000);
+    salvarSessao(foco.materiaId, feitos);
+    if (feitos >= 1) toast(`${feitos} min guardados`);
+    foco = { ultimaMat: foco.materiaId };
+  } else if (acao === "focoPular") foco = { ultimaMat: foco.materiaId };
+  guardarFoco(); render(); tiqueFoco();
 }
 
 /* ---------- tarefas ---------- */
@@ -1029,7 +1140,7 @@ function abrirForm(col, id, preset={}){
   $("#cancel").onclick = () => $("#dlg").close();
   const del = $("#del");
   // apagar uma matéria leva junto os blocos, faltas e provas dela
-  const deps = col==="materias" ? ["cronograma","faltas","provas","tarefas"].flatMap(c => S[c].filter(x => x.materiaId === id).map(x => [c, x.id])) : [];
+  const deps = col==="materias" ? ["cronograma","faltas","provas","tarefas","sessoes"].flatMap(c => S[c].filter(x => x.materiaId === id).map(x => [c, x.id])) : [];
   if (del) del.onclick = async () => {
     if (del.dataset.arm){
       del.disabled = true;
@@ -1219,7 +1330,7 @@ function abrirNovoSemestre(){
     const manter = new Set([...frm.querySelectorAll('input[name="manter"]:checked')].map(i => i.value));
     const sai = S.materias.filter(m => !manter.has(m.id)).map(m => m.id);
     const lista = [
-      ...["cronograma","faltas","provas","tarefas"].flatMap(c => S[c].filter(x => sai.includes(x.materiaId) || !mat(x.materiaId)).map(x => [c, x.id])),
+      ...["cronograma","faltas","provas","tarefas","sessoes"].flatMap(c => S[c].filter(x => sai.includes(x.materiaId) || !mat(x.materiaId)).map(x => [c, x.id])),
       ...S.eventos.filter(e => diasAte(e.dataFim || e.data || hojeISO()) < 0).map(e => ["eventos", e.id]),
       ...sai.map(id => ["materias", id]),
     ];
@@ -1248,7 +1359,7 @@ function abrirNovoSemestre(){
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
-    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas e tarefas. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
+    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas e tempo de estudo. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label><input type="file" id="bkFile" accept=".json,application/json"><span class="need">Junta com o que já existe; itens com o mesmo código são substituídos.</span></div>
     <div class="actions"><div class="r"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button>${PODE_SINC ? '<button type="button" class="ghost" id="bkSinc">Sincronização…</button>' : ""}</div><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
@@ -1341,6 +1452,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao==="agenda") exportarAgenda();
   else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.dataset.acao==="faltei") abrirFaltei();
+  else if (b.dataset.acao?.startsWith("foco")) acaoFoco(b.dataset.acao);
   else if (b.dataset.hist) apagarHistorico(b);
   else if (b.dataset.acao==="notas") abrirNotas(b.dataset.id);
   else if (b.dataset.acao==="simular") abrirSimulador(b.dataset.mat);
