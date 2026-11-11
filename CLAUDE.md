@@ -18,6 +18,8 @@
 - Modo aplicativo (PWA): `manifest.webmanifest`, `sw.js` e os ícones `icon-192.png`, `icon-512.png` e `apple-touch-icon.png` ficam na mesma pasta do `index.html`. Só ligam no site hospedado (http/https); aberto do arquivo ou no claude.ai, são ignorados. O site precisa continuar funcionando sem eles.
 - Ao mudar `sw.js` ou os ícones, aumentar a `VERSAO` dentro do `sw.js`. Se um arquivo novo precisar funcionar sem internet, colocar ele na lista `ARQUIVOS`.
 - Fora do claude.ai, os dados ficam no `localStorage` do navegador. Não depender de servidor nem de IA para nenhuma função.
+- Exceção opcional: a sincronização com o Google Drive (pasta escondida `appDataFolder`). Sem ela, tudo funciona igual. Nunca gravar Client ID, chave ou senha no código: a pessoa cola o Client ID no site e ele fica só no navegador.
+- Todo item salvo localmente ganha `_t` (hora da mudança) e todo item apagado vai para `S.apagados`. A sincronização usa isso para juntar os aparelhos; não remova.
 - No claude.ai existe o artifact "Meu Semestre". Para publicar nele, envie só o conteúdo de dentro do `<head>` (do `<title>` em diante) e do `<body>`, sem as tags `<!doctype>`, `<html>`, `<head>` e `<body>`.
 - Visual: texto em azul-marinho, destaques em bordô, fundo claro; fontes Bricolage Grotesque (títulos), Inter (texto) e JetBrains Mono (números).
 - Dados em pt-BR: notas de 0 a 10, média mínima 6,0 e frequência mínima 75% (ajustáveis no site). Falta justificada não conta no limite.

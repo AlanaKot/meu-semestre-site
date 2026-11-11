@@ -156,8 +156,8 @@ textarea{min-height:70px;resize:vertical}
 .swatches input{position:absolute;opacity:0;width:1px;height:1px}
 .swatches input:checked+label{border-color:var(--fg);box-shadow:inset 0 0 0 3px var(--surface)}
 .swatches input:focus-visible+label{outline:2px solid var(--ink);outline-offset:2px}
-.actions{display:flex;justify-content:space-between;gap:8px;margin-top:4px}
-.actions .r{display:flex;gap:8px}
+.actions{display:flex;justify-content:space-between;gap:8px;margin-top:4px;flex-wrap:wrap}
+.actions .r{display:flex;gap:8px;flex-wrap:wrap}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:.9rem;z-index:20}
 .filter{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .filter select{width:auto}
@@ -218,7 +218,7 @@ textarea{min-height:70px;resize:vertical}
         <h1>Meu <mark>Semestre</mark></h1>
         <div class="sub" id="hoje"></div>
       </div>
-      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="bkp">Backup</button></div>
+      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div>
     </div>
     <nav id="tabs" aria-label="Seções">
       <a href="#painel">Painel</a>
@@ -270,7 +270,7 @@ function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; cle
 function loadLocal(){
   try { const raw = localStorage.getItem(LS_KEY); if (raw) Object.assign(S, JSON.parse(raw)); } catch(e){}
 }
-function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch(e){} }
+function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify(S)); } catch(e){} agendarSinc(); }
 
 async function salvar(col, id, data){
   if (db) {
@@ -278,19 +278,211 @@ async function salvar(col, id, data){
     catch(e){ toast(e.code === "quota_exceeded" ? "Limite de registros atingido. Apague itens antigos." : "Não foi possível salvar. Tente de novo."); return false; }
   } else {
     const arr = S[col]; const i = id ? arr.findIndex(x => x.id === id) : -1;
-    if (i >= 0) arr[i] = { id, ...data }; else arr.push({ id: id || uid(), ...data });
+    // _t: quando o item mudou pela última vez (a sincronização usa para saber qual versão é a mais nova)
+    if (i >= 0) arr[i] = { id, ...data, _t: Date.now() }; else arr.push({ id: id || uid(), ...data, _t: Date.now() });
     saveLocal(); render();
   }
   return true;
 }
 async function apagar(col, id){
   if (db) { try { await db.collection(col).doc(id).delete(); } catch(e){ toast("Não foi possível apagar."); return; } }
-  else { S[col] = S[col].filter(x => x.id !== id); saveLocal(); render(); }
+  else {
+    S[col] = S[col].filter(x => x.id !== id);
+    // anota o que foi apagado, para a sincronização não trazer o item de volta de outro aparelho
+    S.apagados = { ...(S.apagados||{}), [id]: Date.now() };
+    saveLocal(); render();
+  }
 }
 async function salvarConfig(c){
-  S.config = c;
+  S.config = db ? c : { ...c, _t: Date.now() };
   if (db) { try { await db.doc("config/geral").set(c); } catch(e){ toast("Não foi possível salvar."); } }
   else { saveLocal(); render(); }
+}
+
+/* ---------- sincronizar com o Google Drive (opcional) ---------- */
+// Guarda uma cópia dos dados numa pasta escondida do Google Drive da pessoa (a "appDataFolder"),
+// que só este site enxerga. Cada aparelho junta a cópia do Drive com a sua: em cada item vale a
+// versão mais nova (_t), e os itens apagados ficam anotados em S.apagados para não voltarem.
+// Não há chave no código: o Client ID é colado pela pessoa e fica só no navegador dela.
+const LS_SYNC = "meu-semestre-sync";
+const DRIVE_ESCOPO = "https://www.googleapis.com/auth/drive.appdata";
+const DRIVE_ARQ = "meu-semestre.json";
+const PODE_SINC = FORA_DO_CLAUDE && location.protocol.startsWith("http");
+let sinc = {}; try { sinc = JSON.parse(localStorage.getItem(LS_SYNC)) || {}; } catch(e){}
+const guardarSinc = () => { try { localStorage.setItem(LS_SYNC, JSON.stringify(sinc)); } catch(e){} };
+let sincRodando = false, sincDeNovo = false, sincTimer = null, aplicando = false;
+
+function carregarGoogle(){
+  if (window.google?.accounts?.oauth2) return Promise.resolve();
+  if (!carregarGoogle.p) carregarGoogle.p = new Promise((ok, erro) => {
+    const sc = document.createElement("script"); sc.src = "https://accounts.google.com/gsi/client"; sc.async = true;
+    sc.onload = ok; sc.onerror = () => { carregarGoogle.p = null; sc.remove(); erro(new Error("sem-google")); };
+    document.head.append(sc);
+  });
+  return carregarGoogle.p;
+}
+const tokenValido = () => sinc.token && sinc.expira > Date.now() + 60000;
+// Abre a janelinha do Google. Precisa ser chamada direto de um toque, senão o navegador bloqueia.
+function pedirToken(){
+  return new Promise((ok, erro) => {
+    if (!window.google?.accounts?.oauth2) return erro(new Error("sem-google"));
+    google.accounts.oauth2.initTokenClient({
+      client_id: sinc.clientId, scope: DRIVE_ESCOPO, prompt: "",
+      callback: r => {
+        if (r.error || !r.access_token) return erro(new Error(r.error || "negado"));
+        sinc.token = r.access_token; sinc.expira = Date.now() + (+r.expires_in || 3600) * 1000; guardarSinc(); ok();
+      },
+      error_callback: e => erro(new Error(e?.type || "cancelado")),
+    }).requestAccessToken();
+  });
+}
+async function drive(url, opts = {}){
+  const r = await fetch(url, { ...opts, headers: { Authorization: "Bearer " + sinc.token, ...(opts.headers || {}) } });
+  if (r.status === 401){ sinc.token = null; guardarSinc(); throw new Error("token"); }
+  if (!r.ok) throw new Error("drive " + r.status);
+  return r;
+}
+async function lerDrive(){
+  if (!sinc.fileId){
+    const q = encodeURIComponent(`name='${DRIVE_ARQ}'`);
+    const r = await (await drive(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id)&orderBy=createdTime&q=${q}`)).json();
+    if (!r.files?.length) return null;
+    sinc.fileId = r.files[0].id; guardarSinc();
+  }
+  try { return await (await drive(`https://www.googleapis.com/drive/v3/files/${sinc.fileId}?alt=media`)).json(); }
+  catch(e){ if (e.message === "drive 404"){ sinc.fileId = null; guardarSinc(); return lerDrive(); } throw e; }
+}
+async function escreverDrive(d){
+  const corpo = JSON.stringify(d);
+  if (sinc.fileId){
+    await drive(`https://www.googleapis.com/upload/drive/v3/files/${sinc.fileId}?uploadType=media`, { method:"PATCH", headers:{ "Content-Type":"application/json" }, body:corpo });
+    return;
+  }
+  const fd = new FormData();
+  fd.append("metadata", new Blob([JSON.stringify({ name:DRIVE_ARQ, parents:["appDataFolder"] })], { type:"application/json" }));
+  fd.append("file", new Blob([corpo], { type:"application/json" }));
+  const r = await (await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", { method:"POST", body:fd })).json();
+  sinc.fileId = r.id; guardarSinc();
+}
+// mesmo formato e mesma ordem de campos, para comparar duas cópias
+const normal = d => ({ apagados: d.apagados || {}, ...Object.fromEntries(COLS.map(c => [c, d[c] || []])), config: d.config || null });
+function juntar(local, remoto){
+  const limite = Date.now() - 180 * 86400000, apagados = {};
+  for (const [id, t] of [...Object.entries(remoto.apagados || {}), ...Object.entries(local.apagados || {})])
+    if (t > limite) apagados[id] = Math.max(t, apagados[id] || 0);
+  const out = { apagados };
+  for (const c of COLS){
+    const m = new Map();
+    // em empate fica a versão deste aparelho
+    for (const x of [...(remoto[c] || []), ...(local[c] || [])]){ const y = m.get(x.id); if (!y || (x._t || 0) >= (y._t || 0)) m.set(x.id, x); }
+    out[c] = [...m.values()].filter(x => !(apagados[x.id] >= (x._t || 0)));
+  }
+  out.config = (remoto.config?._t || 0) > (local.config?._t || 0) ? remoto.config : local.config;
+  return out;
+}
+function statusSinc(tipo, msg){
+  const el = $("#status"); if (!el) return;
+  el.textContent = tipo === "rodando" ? "Sincronizando…"
+    : tipo === "ok" ? "Sincronizado às " + new Date(sinc.ultima).toLocaleTimeString("pt-BR", { hour:"2-digit", minute:"2-digit" })
+    : tipo === "pendente" ? "Toque em Sincronizar"
+    : msg || "Erro ao sincronizar";
+}
+function agendarSinc(){
+  if (aplicando || !PODE_SINC || !sinc.conectado) return;
+  clearTimeout(sincTimer); sincTimer = setTimeout(() => sincronizar(false), 2000);
+}
+// interativo = veio de um toque, então pode abrir a janelinha do Google se o acesso venceu
+async function sincronizar(interativo){
+  if (!PODE_SINC || !sinc.clientId) return false;
+  if (sincRodando){ sincDeNovo = true; return false; }
+  sincRodando = true;
+  try {
+    if (!tokenValido()){
+      if (!interativo){ statusSinc("pendente"); return false; }
+      await pedirToken();
+    }
+    statusSinc("rodando");
+    const remoto = await lerDrive() || {};
+    const local = { apagados: S.apagados || {}, ...Object.fromEntries(COLS.map(c => [c, S[c]])), config: S.config };
+    const junto = juntar(local, remoto), txt = JSON.stringify(normal(junto));
+    if (txt !== JSON.stringify(normal(remoto))) await escreverDrive({ app:"meu-semestre", versao:1, ...junto });
+    if (txt !== JSON.stringify(normal(local))){
+      COLS.forEach(c => S[c] = junto[c]);
+      S.apagados = junto.apagados;
+      if (junto.config) S.config = { mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0, ...junto.config };
+      aplicando = true; saveLocal(); aplicando = false; render();
+    }
+    sinc.ultima = Date.now(); guardarSinc(); statusSinc("ok");
+    return true;
+  } catch(e){
+    statusSinc("erro", e.message === "sem-google" || e instanceof TypeError ? "Sem internet: sincroniza depois"
+      : e.message === "token" ? "Toque em Sincronizar para entrar de novo"
+      : /cancel|negado|popup|access_denied/.test(e.message) ? "Entrada no Google cancelada" : "Erro ao sincronizar");
+    return false;
+  } finally {
+    sincRodando = false;
+    if (sincDeNovo){ sincDeNovo = false; agendarSinc(); }
+  }
+}
+function iniciarSinc(){
+  if (!PODE_SINC) return;
+  $("#sinc").hidden = false;
+  if (sinc.conectado) ligarSinc();
+}
+function ligarSinc(){
+  if (ligarSinc.feito) return; ligarSinc.feito = true;
+  carregarGoogle().catch(() => {});
+  sincronizar(false);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sincronizar(false); });
+  window.addEventListener("online", () => sincronizar(false));
+}
+function botaoSinc(){
+  if (sinc.conectado){ carregarGoogle().catch(() => {}); sincronizar(true); }
+  else abrirSinc();
+}
+function abrirSinc(){
+  const frm = $("#frm");
+  carregarGoogle().catch(() => {});
+  const quando = sinc.ultima ? new Date(sinc.ultima).toLocaleString("pt-BR", { day:"2-digit", month:"short", hour:"2-digit", minute:"2-digit" }) : "ainda não";
+  frm.innerHTML = sinc.conectado ? `<h2>Sincronizar com o Google Drive</h2>
+      <p class="need">Ligado neste aparelho. Última sincronização: <b>${quando}</b>.</p>
+      <p class="need">O site sincroniza sozinho quando você muda algo ou abre o site. Depois de algum tempo sem uso, o Google pede para entrar de novo: é só tocar em <b>Sincronizar</b> no topo.</p>
+      <p class="erro" id="erro" role="alert" hidden></p>
+      <div class="actions"><button type="button" class="ghost" id="desligar">Desligar neste aparelho</button><div class="r"><button type="button" id="cancel">Fechar</button><button type="submit" class="primary">Sincronizar agora</button></div></div>`
+    : `<h2>Sincronizar com o Google Drive</h2>
+      <p class="need">Os dados ficam iguais no celular e no computador. Uma cópia fica numa pasta escondida do <b>seu</b> Google Drive, que só este site enxerga. Sem internet, o site continua funcionando e sincroniza depois.</p>
+      <div class="field"><label for="s_cid">Client ID do Google</label><input id="s_cid" autocomplete="off" spellcheck="false" placeholder="….apps.googleusercontent.com" value="${esc(sinc.clientId || "")}"><span class="need">Você cria esse código uma vez no Google Cloud. O passo a passo está no README do projeto.</span></div>
+      <p class="erro" id="erro" role="alert" hidden></p>
+      <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Fechar</button><button type="submit" class="primary">Conectar com o Google</button></div></div>`;
+  $("#cancel").onclick = () => $("#dlg").close();
+  frm.onsubmit = async e => {
+    e.preventDefault();
+    const bt = frm.querySelector("[type=submit]");
+    if (!sinc.conectado){
+      const cid = $("#s_cid").value.trim();
+      if (!/^[\w-]+\.apps\.googleusercontent\.com$/.test(cid)){ mostrarErro("s_cid", "Cole o Client ID inteiro. Ele termina em .apps.googleusercontent.com."); return; }
+      if (!window.google?.accounts?.oauth2){ mostrarErro("s_cid", "Ainda carregando o Google (precisa de internet). Tente de novo em alguns segundos."); return; }
+      if (cid !== sinc.clientId) sinc = { clientId: cid };
+      bt.disabled = true;
+      // pede o acesso já, ainda dentro do toque, para o navegador não bloquear a janelinha
+      try { await pedirToken(); }
+      catch(err){ bt.disabled = false; mostrarErro("s_cid", "Não deu para entrar no Google. Confira o Client ID e se este endereço está nas origens autorizadas."); return; }
+      sinc.conectado = true; guardarSinc();
+    } else bt.disabled = true;
+    const ok = await sincronizar(true);
+    bt.disabled = false;
+    if (ok){ $("#dlg").close(); toast("Sincronizado"); ligarSinc(); }
+    else mostrarErro("erro", $("#status").textContent + ".");
+  };
+  const des = $("#desligar");
+  if (des) des.onclick = () => {
+    if (!des.dataset.arm){ des.dataset.arm = 1; des.textContent = "Confirmar: desligar"; return; }
+    if (sinc.token) try { google.accounts.oauth2.revoke(sinc.token, () => {}); } catch(_){}
+    sinc = { clientId: sinc.clientId }; guardarSinc();
+    $("#status").textContent = "Salvo neste navegador";
+    $("#dlg").close(); toast("Sincronização desligada. Os dados continuam aqui e no Drive.");
+  };
+  $("#dlg").showModal();
 }
 
 async function iniciar(){
@@ -299,7 +491,7 @@ async function iniciar(){
   if (!cdb) {
     mode = "local"; loadLocal();
     $("#status").textContent = "Salvo neste navegador";
-    render(); return;
+    render(); iniciarSinc(); return;
   }
   db = cdb;
   const timer = setTimeout(() => { $("#status").textContent = "Sem conexão com seus dados ainda…"; }, 10000);
@@ -382,7 +574,7 @@ const temExemplos = () => COLS.some(c => S[c].some(x => x.exemplo));
 // fora do Claude os dados vivem só neste navegador, então lembramos do backup
 function marcarBackup(){ try { localStorage.setItem(LS_BACKUP, hojeISO()); } catch(e){} }
 function avisoBackup(){
-  if (!FORA_DO_CLAUDE || mode !== "local" || !COLS.some(c => S[c].length)) return "";
+  if (!FORA_DO_CLAUDE || mode !== "local" || sinc.conectado || !COLS.some(c => S[c].length)) return "";
   let ult = null; try { ult = localStorage.getItem(LS_BACKUP); } catch(e){}
   const dias = ult ? -diasAte(ult) : null;
   if (dias != null && dias < 7) return "";
@@ -1059,11 +1251,12 @@ function abrirBackup(){
     <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas e tarefas. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label><input type="file" id="bkFile" accept=".json,application/json"><span class="need">Junta com o que já existe; itens com o mesmo código são substituídos.</span></div>
-    <div class="actions"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+    <div class="actions"><div class="r"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button>${PODE_SINC ? '<button type="button" class="ghost" id="bkSinc">Sincronização…</button>' : ""}</div><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
   frm.onsubmit = e => e.preventDefault();
   $("#cancel").onclick = () => $("#dlg").close();
   $("#bkDown").onclick = baixarBackup;
   $("#novoSem").onclick = abrirNovoSemestre;
+  if ($("#bkSinc")) $("#bkSinc").onclick = abrirSinc;
   $("#bkFile").onchange = e => {
     const f = e.target.files[0]; if (!f) return;
     const rd = new FileReader();
@@ -1165,6 +1358,7 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+$("#sinc").onclick = botaoSinc;
 
 /* ---------- modo aplicativo ---------- */
 // Só no site hospedado (http/https): liga o manifesto (nome e ícone do app) e o service worker (abre sem internet).
