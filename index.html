@@ -163,6 +163,23 @@ textarea{min-height:70px;resize:vertical}
 .dias{display:flex;gap:6px 14px;flex-wrap:wrap}
 .dias label{display:inline-flex;align-items:center;gap:6px;font-weight:400;color:var(--fg);font-size:.92rem}
 .dias input{width:auto}
+.faltei{display:flex;flex-direction:column}
+.faltei .row{padding:8px 0}
+.faltei .est{flex:1;min-width:0;padding:0;align-items:center}
+.faltei .est input{margin-top:0}
+.faltei input.qtd{width:64px;text-align:center;flex:none}
+/* telas de toque (celular e tablet): alvos maiores para o dedo e texto de 16px nos campos (evita o zoom automático do iPhone) */
+@media (pointer:coarse),(max-width:760px){
+  button:not(.mi){min-height:44px;padding:10px 14px}
+  button.ghost{padding:10px 12px;font-size:.92rem}
+  .mn{min-height:0;width:36px;height:36px}
+  .blk{min-height:44px}
+  input,select,textarea{font-size:16px;padding:11px 12px}
+  .est{padding:8px 0}
+  .est input,.field.check input,.dias input{width:22px;height:22px}
+  .swatches label{width:40px;height:40px}
+  .dias{gap:10px 18px}
+}
 @media (prefers-reduced-motion:no-preference){.day,.panel,.card{transition:border-color .15s}}
 </style>
 </head>
@@ -444,7 +461,7 @@ function vPainel(){
   return `${avisoExemplo()}
   <div class="grid2">
     <section class="panel">
-      <div class="bar" style="margin-bottom:8px"><h3>Hoje · ${DIAS[hoje]}</h3><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div>
+      <div class="bar" style="margin-bottom:8px"><h3>Hoje · ${DIAS[hoje]}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
       ${blocos.length ? `<div class="list">${blocos.map(b => `
         <div class="row"><span class="dot" style="background:${esc(corDe(b.materiaId))}"></span>
           <div class="grow"><div class="t">${esc(nomeDe(b.materiaId))}${exTag(b)}</div><div class="m">${esc(b.topico||rotTipo(b.tipo))}</div></div>
@@ -717,6 +734,45 @@ function abrirConfig(){
   $("#dlg").showModal();
 }
 
+// "Faltei hoje": registra a falta de hoje em várias matérias de uma vez.
+// Já vêm marcadas as matérias com aula hoje no cronograma; o número de aulas sai da duração do bloco (50 min por aula).
+function abrirFaltei(){
+  if (!S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
+  const hoje = hojeISO(), dia = new Date().getDay(), aulasHoje = {};
+  S.cronograma.filter(b => +b.dia === dia && b.tipo === "aula" && b.inicio && b.fim).forEach(b => {
+    const [h1,m1] = b.inicio.split(":").map(Number), [h2,m2] = b.fim.split(":").map(Number);
+    aulasHoje[b.materiaId] = (aulasHoje[b.materiaId] || 0) + Math.max(1, Math.round(((h2*60+m2) - (h1*60+m1)) / 50));
+  });
+  const jaTem = id => S.faltas.some(f => f.materiaId === id && f.data === hoje);
+  const lista = [...S.materias].sort((a,b) => (aulasHoje[b.id] ? 1 : 0) - (aulasHoje[a.id] ? 1 : 0));
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Faltei hoje</h2>
+    <p class="need"><b>${fmtData(hoje)}</b> · Marque as matérias e confira quantas aulas você perdeu em cada uma.</p>
+    <div class="faltei">${lista.map(m => `<div class="row">
+      <label class="est manter"><input type="checkbox" name="fm" id="fm_${m.id}" value="${m.id}" ${aulasHoje[m.id] && !jaTem(m.id) ? "checked" : ""}>
+        <span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}
+        ${jaTem(m.id) ? '<span class="chip warn">já registrada hoje</span>' : aulasHoje[m.id] ? '<span class="chip">aula hoje</span>' : ""}</span></label>
+      <input class="qtd" id="fq_${m.id}" inputmode="numeric" value="${aulasHoje[m.id] || 2}" aria-label="Aulas perdidas em ${esc(m.nome)}"></div>`).join("")}</div>
+    <div class="field check"><input type="checkbox" id="fJust"><label for="fJust">Falta justificada (não conta no limite)</label></div>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Registrar</button></div></div>`;
+  frm.onsubmit = async e => { e.preventDefault();
+    const ids = [...frm.querySelectorAll('input[name="fm"]:checked')].map(i => i.value);
+    if (!ids.length){ mostrarErro("fm_"+lista[0].id, "Marque pelo menos uma matéria."); return; }
+    const itens = [];
+    for (const id of ids){
+      const aulas = num($("#fq_"+id).value);
+      if (aulas == null || !Number.isInteger(aulas) || aulas < 1){ mostrarErro("fq_"+id, `Aulas perdidas em ${nomeDe(id)}: um número inteiro, 1 ou mais.`); return; }
+      itens.push({ materiaId:id, data:hoje, aulas, justificada:$("#fJust").checked, obs:"" });
+    }
+    let n = 0;
+    for (const it of itens) if (await salvar("faltas", null, it)) n++;
+    if (n){ $("#dlg").close(); toast(n === 1 ? "Falta registrada" : `Falta registrada em ${n} matérias`); }
+  };
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#dlg").showModal();
+}
+
 // Baixa o backup. Devolve true quando o arquivo foi entregue.
 async function baixarBackup(){
   const data = JSON.stringify({ app:"meu-semestre", versao:1, ...Object.fromEntries(COLS.map(c=>[c,S[c]])), config:S.config }, null, 2);
@@ -865,6 +921,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao==="backup") abrirBackup();
   else if (b.dataset.acao==="agenda") exportarAgenda();
   else if (b.dataset.acao==="plano") abrirPlano();
+  else if (b.dataset.acao==="faltei") abrirFaltei();
   else if (b.id==="limparEx"){
     if (!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar: apagar exemplos"; return; }
     b.disabled = true;
