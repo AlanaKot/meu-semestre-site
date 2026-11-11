@@ -11,6 +11,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Semestre">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
+<script>
+// aplica o tema escolhido antes de desenhar a página, para não piscar claro
+try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch(e){}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -19,7 +23,7 @@
 :root{
   --bg:#f6f5f4; --surface:#ffffff; --surface-2:#ebe9e8; --line:#d9d6d4;
   --fg:#14213d; --muted:#565f73; --ink:#14284f;
-  --accent:#7a1f35; --accent-ink:#ffffff;
+  --accent:#7a1f35; --accent-ink:#ffffff; --accent-txt:#7a1f35;
   --ok:#17703d; --warn:#8a5a0f; --bad:#b3302a;
   --ok-bg:#dff3e7; --warn-bg:#fbefd6; --bad-bg:#fbe1df;
   --f-display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
@@ -30,13 +34,13 @@
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#0d111a; --surface:#141a27; --surface-2:#1d2535; --line:#2d374b;
   --fg:#e8ebf3; --muted:#9da6ba; --ink:#9db8f0;
-  --accent:#b83a56; --accent-ink:#ffffff;
+  --accent:#b83a56; --accent-ink:#ffffff; --accent-txt:#ec8aa0;
   --ok:#4cc583; --warn:#e5a84a; --bad:#f07068;
   --ok-bg:#16301f; --warn-bg:#33270f; --bad-bg:#3a1a19; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0d111a; --surface:#141a27; --surface-2:#1d2535; --line:#2d374b;
   --fg:#e8ebf3; --muted:#9da6ba; --ink:#9db8f0;
-  --accent:#b83a56; --accent-ink:#ffffff;
+  --accent:#b83a56; --accent-ink:#ffffff; --accent-txt:#ec8aa0;
   --ok:#4cc583; --warn:#e5a84a; --bad:#f07068;
   --ok-bg:#16301f; --warn-bg:#33270f; --bad-bg:#3a1a19; color-scheme:dark}
 
@@ -189,7 +193,7 @@ textarea{min-height:70px;resize:vertical}
 .tarefa .est{flex:1;min-width:0;padding:0}
 .tarefa .t{font-weight:500;overflow-wrap:anywhere}
 .links{display:flex;flex-wrap:wrap;gap:6px}
-.links a{color:var(--accent);font-weight:500;font-size:.88rem;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.links a{color:var(--accent-txt);font-weight:500;font-size:.88rem;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:3px 10px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .links a:hover{border-color:var(--accent)}
 .links a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .nota-txt{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.9rem;color:var(--muted);display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
@@ -220,7 +224,7 @@ textarea{min-height:70px;resize:vertical}
         <h1>Meu <mark>Semestre</mark></h1>
         <div class="sub" id="hoje"></div>
       </div>
-      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div>
+      <div class="filter"><span class="sub" id="status">Carregando…</span><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="tema" aria-label="Tema: automático" title="Tema">◐</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div>
     </div>
     <nav id="tabs" aria-label="Seções">
       <a href="#painel">Painel</a>
@@ -1527,6 +1531,28 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+
+/* ---------- tema claro/escuro ---------- */
+// Automático segue o tema do celular ou computador. Claro e Escuro fixam a escolha neste aparelho.
+const LS_TEMA = "meu-semestre-tema", TEMAS = [["", "automático", "◐"], ["light", "claro", "☀"], ["dark", "escuro", "☾"]];
+let tema = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; } catch(e){}
+const corBarra = document.querySelectorAll('meta[name="theme-color"]'), corOriginal = [...corBarra].map(m => m.content);
+function aplicarTema(){
+  const [valor, nome, icone] = TEMAS.find(t => t[0] === tema) || TEMAS[0];
+  if (valor) document.documentElement.dataset.theme = valor;
+  else if (FORA_DO_CLAUDE) delete document.documentElement.dataset.theme;
+  // cor da barra do navegador e do app instalado
+  corBarra.forEach((m, i) => m.content = valor ? (valor === "dark" ? "#141a27" : "#ffffff") : corOriginal[i]);
+  const b = $("#tema"); b.textContent = icone; b.setAttribute("aria-label", "Tema: " + nome); b.title = "Tema: " + nome + " (toque para trocar)";
+  return nome;
+}
+$("#tema").onclick = () => {
+  const i = TEMAS.findIndex(t => t[0] === tema);
+  tema = TEMAS[(i + 1) % TEMAS.length][0];
+  try { tema ? localStorage.setItem(LS_TEMA, tema) : localStorage.removeItem(LS_TEMA); } catch(e){}
+  toast("Tema " + aplicarTema());
+};
+aplicarTema();
 $("#sinc").onclick = botaoSinc;
 
 /* ---------- modo aplicativo ---------- */
