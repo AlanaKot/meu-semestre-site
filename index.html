@@ -967,12 +967,14 @@ function acaoFoco(acao){
 }
 
 /* ---------- tarefas ---------- */
+const REPETIR = [["", "Não repete"], ["7", "Toda semana"], ["14", "A cada 2 semanas"]];
 // pendentes primeiro, por prazo (sem prazo vai para o fim); feitas por último
 const ordemTarefas = l => [...l].sort((a,b) => (a.feita?1:0) - (b.feita?1:0) || (a.data||"9").localeCompare(b.data||"9"));
 function linhaTarefa(t, comMateria){
   const atrasada = !t.feita && t.data && diasAte(t.data) < 0;
   const prazo = t.feita || !t.data ? "" : atrasada ? '<span class="chip bad">atrasada</span>' : diasAte(t.data) === 0 ? '<span class="chip bad">hoje</span>' : chipPrazo(t.data);
-  const sub = [comMateria ? `<span class="dot" style="background:${esc(corDe(t.materiaId))}"></span> ${esc(nomeDe(t.materiaId))}` : "", t.data ? "até "+fmtData(t.data) : ""].filter(Boolean).join(" · ");
+  const sub = [comMateria ? `<span class="dot" style="background:${esc(corDe(t.materiaId))}"></span> ${esc(nomeDe(t.materiaId))}` : "", t.data ? "até "+fmtData(t.data) : "",
+    t.repetir && !t.proxima ? "↻ " + (REPETIR.find(r => r[0] === String(t.repetir))?.[1] || "").toLowerCase() : ""].filter(Boolean).join(" · ");
   return `<div class="row tarefa"><label class="est"><input type="checkbox" data-tarefa="${t.id}" ${t.feita?"checked":""} aria-label="Feita: ${esc(t.titulo)}">
       <span><span class="t">${esc(t.titulo)}</span>${exTag(t)}${sub?`<span class="m" style="display:block">${sub}</span>`:""}</span></label>
     ${prazo}<button class="ghost" data-edit="tarefas" data-id="${t.id}" aria-label="Editar ${esc(t.titulo)}">Editar</button></div>`;
@@ -995,7 +997,21 @@ function blocoTarefas(m){
 async function marcarTarefa(id, feita){
   const t = S.tarefas.find(x => x.id === id); if (!t) return;
   const { id:_, ...resto } = t;
-  await salvar("tarefas", id, { ...resto, feita });
+  // ao marcar uma tarefa que se repete, a próxima é criada uma vez só (a marca "proxima" evita repetir)
+  const repete = feita && t.repetir && t.data && !t.proxima;
+  if (await salvar("tarefas", id, { ...resto, feita, ...(repete ? { proxima:true } : {}) }) && repete){
+    const nova = await criarProxima(t);
+    if (nova) toast(`Próxima: ${t.titulo}, até ${fmtData(nova)}`);
+  }
+}
+// cria a próxima vez da tarefa; o prazo anda de N em N dias até chegar em hoje ou depois
+async function criarProxima(t){
+  const passo = +t.repetir; if (!passo || !t.data) return null;
+  const d = parseD(t.data), hoje = parseD(hojeISO());
+  do d.setDate(d.getDate() + passo); while (d < hoje);
+  const data = isoDe(d);
+  await salvar("tarefas", null, { materiaId:t.materiaId, titulo:t.titulo, data, repetir:t.repetir, feita:false });
+  return data;
 }
 
 /* ---------- anotações e links ---------- */
@@ -1072,6 +1088,7 @@ const FORMS = {
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
     {k:"titulo",l:"O que fazer",t:"text",req:1,ph:"Ex.: Lista 3, ler capítulo 2"},
     {k:"data",l:"Prazo (opcional)",t:"date"},
+    {k:"repetir",l:"Repetir",t:"select",opts:REPETIR,hint:"Ao marcar como feita, a próxima aparece sozinha com o prazo seguinte."},
     {k:"feita",l:"Já está feita",t:"check"} ]},
   provas: { titulo:"Prova ou trabalho", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
@@ -1085,7 +1102,7 @@ const FORMS = {
 function campoHTML(c, v){
   const id = "f_"+c.k, val = v ?? (typeof c.def==="function"?c.def():c.def) ?? "";
   if (c.t==="select"){ const o = typeof c.opts==="function"?c.opts():c.opts;
-    return `<div class="field"><label for="${id}">${c.l}</label><select id="${id}" name="${c.k}">${o.map(([a,b])=>`<option value="${esc(a)}" ${String(val)===String(a)?"selected":""}>${esc(b)}</option>`).join("")}</select></div>`; }
+    return `<div class="field"><label for="${id}">${c.l}</label><select id="${id}" name="${c.k}">${o.map(([a,b])=>`<option value="${esc(a)}" ${String(val)===String(a)?"selected":""}>${esc(b)}</option>`).join("")}</select>${c.hint?`<span class="need">${c.hint}</span>`:""}</div>`; }
   if (c.t==="check") return `<div class="field check"><input type="checkbox" id="${id}" name="${c.k}" ${val?"checked":""}><label for="${id}">${c.l}</label></div>`;
   if (c.t==="area") return `<div class="field"><label for="${id}">${c.l}</label><textarea id="${id}" name="${c.k}">${esc(val)}</textarea></div>`;
   if (c.t==="cor"){ const cur = val || CORES[S.materias.length % CORES.length];
@@ -1111,6 +1128,7 @@ function validar(col, out, raw){
     if (!out.data) return ["data", "Informe o dia do evento."];
     if (out.dataFim && out.dataFim < out.data) return ["dataFim", "O último dia precisa ser igual ou depois do primeiro."];
   }
+  if (col==="tarefas" && out.repetir && !out.data) return ["data", "Para repetir, informe o prazo da primeira vez."];
   if (col==="provas"){
     if (out.notaMax == null || out.notaMax <= 0) return ["notaMax", "Informe quanto a avaliação vale (maior que zero)."];
     if (out.peso == null || out.peso <= 0) return ["peso", "O peso precisa ser maior que zero."];
@@ -1143,7 +1161,10 @@ function abrirForm(col, id, preset={}){
     if (col==="cronograma") out.dia = +out.dia;
     // mantém os campos que o formulário não mostra (anotações, links, marca de exemplo)
     const { id:_, ...resto } = item || {};
-    const ok = await salvar(col, id, { ...resto, ...out });
+    // tarefa que se repete marcada como feita no formulário: cria a próxima
+    const repete = col==="tarefas" && out.feita && out.repetir && !resto.proxima;
+    const ok = await salvar(col, id, { ...resto, ...out, ...(repete ? { proxima:true } : {}) });
+    if (ok && repete) await criarProxima({ ...resto, ...out });
     if (ok){ $("#dlg").close(); toast("Salvo"); }
   };
   $("#cancel").onclick = () => $("#dlg").close();
