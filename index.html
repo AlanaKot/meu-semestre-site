@@ -91,6 +91,9 @@ h3{font-family:var(--f-display);font-weight:700;font-size:1.25rem;letter-spacing
 .panel.sec{background:none;padding:0;border-radius:0}
 .panel.sec>.bar,.panel.sec>h3{margin:0 4px 8px!important;min-height:36px}
 .panel.sec>.bar h3{margin:0}
+button.row.anot{padding:11px 0;min-height:44px}
+.anot{width:100%;text-align:left;background:none;border:0;border-radius:0;color:inherit;font:inherit;cursor:pointer}
+.anot-txt{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
 .grupo{background:var(--surface);border-radius:var(--r);padding:4px 16px;overflow:hidden}
 .grupo>.empty,.grupo>.need{padding:12px 0;margin:0}
 .grupo>.foco{padding:12px 0}
@@ -379,12 +382,12 @@ textarea{min-height:76px;resize:vertical}
 const DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
-const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas","sessoes"];
+const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas","sessoes","anotacoes"];
 const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], sessoes:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], sessoes:[], anotacoes:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -876,6 +879,7 @@ function vPainel(){
         : `<p class="empty">Nenhuma prova, entrega ou evento à frente.</p>`}
     </section>
   </div>
+  ${painelAnotacoes()}
   ${painelTarefas()}
   ${painelFoco()}
   ${painelPlano()}
@@ -1102,6 +1106,7 @@ function vMaterias(){
         <div class="stat"><div class="label">Faltas</div><div class="v">${f.total}${f.limite!=null?`<span class="need">/${f.limite}</span>`:""}</div></div>
         <div class="stat"><div class="label">Aulas</div><div class="v">${num(m.cargaHoraria)??"—"}</div></div></div>
       ${blocoTarefas(m)}
+      ${blocoAnotacoesMat(m)}
       ${blocoNotas(m)}
     </div>`; }).join("") || '<p class="empty">Comece cadastrando as matérias do semestre.</p>'}</div>
   ${blocoHistorico()}`;
@@ -1237,6 +1242,53 @@ function painelTarefas(){
       : '<p class="empty">Nenhuma tarefa pendente.</p>'}
   </section>`;
 }
+/* ---------- anotações rápidas ---------- */
+// Bloco de notas geral: cada anotação tem texto, data em que foi criada e matéria opcional.
+// Apagar uma matéria não apaga as anotações dela (elas ficam "Sem matéria").
+const ordemAnot = l => [...l].sort((a, b) => (b.fixada ? 1 : 0) - (a.fixada ? 1 : 0) || (b.criada || "").localeCompare(a.criada || ""));
+function quandoAnot(iso){
+  if (!iso) return "";
+  const d = new Date(iso), dia = isoDe(d), n = diasAte(dia), hora = d.toLocaleTimeString("pt-BR", { hour:"2-digit", minute:"2-digit" });
+  return n === 0 ? "hoje, " + hora : n === -1 ? "ontem, " + hora : fmtCurta(dia) + (d.getFullYear() !== new Date().getFullYear() ? " de " + d.getFullYear() : "");
+}
+function linhaAnot(a, comMateria){
+  const sub = [a.fixada ? "fixada" : "", comMateria && a.materiaId ? `<span class="dot" style="background:${esc(corDe(a.materiaId))}"></span> ${esc(nomeDe(a.materiaId))}` : "", quandoAnot(a.criada)].filter(Boolean).join(" · ");
+  return `<button type="button" class="row anot" data-edit="anotacoes" data-id="${a.id}">
+    <span class="grow"><span class="anot-txt">${esc(a.texto)}</span><span class="m" style="display:block">${sub}</span></span></button>`;
+}
+function painelAnotacoes(){
+  const todas = ordemAnot(S.anotacoes), mostra = todas.slice(0, 3);
+  return `<section class="panel" style="margin-top:26px">
+    <div class="bar" style="margin-bottom:8px"><h3 style="margin:0">Anotações</h3><div class="filter">
+      ${todas.length > 3 ? `<button class="ghost" data-acao="anotacoes">Ver todas (${todas.length})</button>` : ""}<button class="ghost" data-novo="anotacoes">+ Anotação</button></div></div>
+    ${mostra.length ? `<div class="list">${mostra.map(a => linhaAnot(a, true)).join("")}</div>` : '<p class="empty">Anote aqui o que o professor falou para não esquecer.</p>'}
+  </section>`;
+}
+function blocoAnotacoesMat(m){
+  const l = ordemAnot(S.anotacoes.filter(a => a.materiaId === m.id));
+  return `<div class="notas"><div class="bar" style="margin:0"><span class="label">Anotações${l.length ? ` · ${l.length}` : ""}</span>
+      <button class="ghost" data-novo="anotacoes" data-mat="${m.id}">+ Anotação</button></div>
+    ${l.length ? `<div class="list">${l.slice(0, 3).map(a => linhaAnot(a, false)).join("")}</div>${l.length > 3 ? `<button class="ghost" data-acao="anotacoes" data-mat="${m.id}">Ver todas (${l.length})</button>` : ""}` : ""}</div>`;
+}
+function abrirAnotacoes(filtro){
+  const frm = $("#frm");
+  const desenhar = () => {
+    const l = ordemAnot(S.anotacoes.filter(a => !filtro || (filtro === "-" ? !mat(a.materiaId) : a.materiaId === filtro)));
+    $("#an_lista").innerHTML = l.length ? `<div class="list">${l.map(a => linhaAnot(a, !filtro)).join("")}</div>` : '<p class="empty">Nenhuma anotação aqui.</p>';
+  };
+  frm.innerHTML = `<h2>Anotações</h2>
+    <div class="field"><label for="an_f">Matéria</label><select id="an_f"><option value="">Todas</option>${S.materias.map(m => `<option value="${m.id}" ${m.id === filtro ? "selected" : ""}>${esc(m.nome)}</option>`).join("")}<option value="-" ${filtro === "-" ? "selected" : ""}>Sem matéria</option></select></div>
+    <div id="an_lista"></div>
+    <div class="actions"><button type="button" class="ghost" id="an_nova">+ Anotação</button><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+  frm.onsubmit = e => e.preventDefault();
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#an_f").onchange = e => { filtro = e.target.value; desenhar(); };
+  $("#an_nova").onclick = () => { $("#dlg").close(); abrirForm("anotacoes", null, filtro && filtro !== "-" ? { materiaId: filtro } : {}); };
+  $("#an_lista").onclick = e => { const b = e.target.closest("[data-edit]"); if (!b) return; $("#dlg").close(); abrirForm("anotacoes", b.dataset.id); };
+  desenhar();
+  $("#dlg").showModal();
+}
+
 function blocoTarefas(m){
   const ts = ordemTarefas(S.tarefas.filter(t => t.materiaId === m.id)), feitas = ts.filter(t => t.feita).length;
   return `<div class="notas"><div class="bar" style="margin:0"><span class="label">Tarefas${ts.length ? ` · ${feitas} de ${ts.length} feitas` : ""}</span>
@@ -1313,6 +1365,10 @@ function abrirNotas(id){
 /* ---------- formulários ---------- */
 const optMaterias = () => S.materias.map(m => [m.id, m.nome]);
 const FORMS = {
+  anotacoes: { titulo:"Anotação", campos:[
+    {k:"texto",l:"Anotação",t:"area",ph:"Ex.: a prova vai até o capítulo 4; trazer calculadora"},
+    {k:"materiaId",l:"Matéria (opcional)",t:"select",opts:() => [["", "Nenhuma"], ...optMaterias()]},
+    {k:"fixada",l:"Fixar no topo",t:"check"} ]},
   materias: { titulo:"Matéria", campos:[
     {k:"nome",l:"Nome",t:"text",req:1},
     {k:"professor",l:"Professor(a)",t:"text"},
@@ -1412,6 +1468,7 @@ function validar(col, out, raw){
     if (!out.data) return ["data", "Informe o dia do evento."];
     if (out.dataFim && out.dataFim < out.data) return ["dataFim", "O último dia precisa ser igual ou depois do primeiro."];
   }
+  if (col==="anotacoes" && !String(out.texto || "").trim()) return ["texto", "Escreva a anotação."];
   if (col==="tarefas" && out.repetir && !out.data) return ["data", "Para repetir, informe o prazo da primeira vez."];
   if (col==="provas"){
     if (out.notaMax == null || out.notaMax <= 0) return ["notaMax", "Informe quanto a avaliação vale (maior que zero)."];
@@ -1427,7 +1484,7 @@ function mostrarErro(campoId, msg){
 
 function abrirForm(col, id, preset={}){
   const F = FORMS[col], item = id ? S[col].find(x=>x.id===id) : null;
-  if (col!=="materias" && col!=="eventos" && !S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
+  if (col!=="materias" && col!=="eventos" && col!=="anotacoes" && !S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
   const dados = { ...preset, ...(item||{}) };
   const campos = F.campos.map(c => c.duo ? `<div class="duo">${c.duo.map(d=>campoHTML(d,dados[d.k])).join("")}</div>` : campoHTML(c, dados[c.k])).join("");
   const frm = $("#frm");
@@ -1445,6 +1502,7 @@ function abrirForm(col, id, preset={}){
     if (col==="cronograma") out.dia = +out.dia;
     // mantém os campos que o formulário não mostra (anotações, links, marca de exemplo)
     const { id:_, ...resto } = item || {};
+    if (col==="anotacoes" && !resto.criada) out.criada = new Date().toISOString();
     // tarefa que se repete marcada como feita no formulário: cria a próxima
     const repete = col==="tarefas" && out.feita && out.repetir && !resto.proxima;
     const ok = await salvar(col, id, { ...resto, ...out, ...(repete ? { proxima:true } : {}) });
@@ -1675,7 +1733,7 @@ function abrirNovoSemestre(){
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
-    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas e tempo de estudo. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
+    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas, anotações e tempo de estudo. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label><input type="file" id="bkFile" accept=".json,application/json"><span class="need">Junta com o que já existe; itens com o mesmo código são substituídos.</span></div>
     <div class="actions"><div class="r"><button type="button" class="ghost" id="novoSem">Começar novo semestre…</button>${PODE_SINC ? '<button type="button" class="ghost" id="bkSinc">Sincronização…</button>' : ""}</div><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
@@ -1826,6 +1884,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao==="lembretes") abrirLembretes();
   else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.dataset.acao==="faltei") abrirFaltei();
+  else if (b.dataset.acao==="anotacoes") abrirAnotacoes(b.dataset.mat || "");
   else if (b.dataset.acao==="periodo") abrirPeriodo();
   else if (b.dataset.acao?.startsWith("foco")) acaoFoco(b.dataset.acao);
   else if (b.dataset.hist) apagarHistorico(b);
@@ -1873,6 +1932,8 @@ function itensBusca(){
     ...S.tarefas.map(x => ({ col:"tarefas", id:x.id, tipo:x.feita ? "Tarefa feita" : "Tarefa", t:x.titulo, sub:sub(x.materiaId) + (x.data ? " · até " + fmtData(x.data) : ""), cor:corDe(x.materiaId), txt:[x.titulo, sub(x.materiaId)] })),
     ...S.eventos.map(e => ({ col:"eventos", id:e.id, tipo:"Evento", t:e.titulo, sub:periodo(e), cor:"#6b7a8f", txt:[e.titulo, e.obs], trecho:e.obs })),
     ...S.cronograma.filter(b => b.topico).map(b => ({ col:"cronograma", id:b.id, tipo:rotTipo(b.tipo), t:b.topico, sub:sub(b.materiaId) + " · " + DIAS[b.dia], cor:corDe(b.materiaId), txt:[b.topico] })),
+    ...S.anotacoes.map(a => ({ col:"anotacoes", id:a.id, tipo:"Anotação", t:String(a.texto || "").split("\n")[0].slice(0, 60), sub:[a.materiaId ? sub(a.materiaId) : "", quandoAnot(a.criada)].filter(Boolean).join(" · "),
+        cor:a.materiaId ? corDe(a.materiaId) : "#8e8e93", txt:[a.texto, a.materiaId ? sub(a.materiaId) : ""], trecho:a.texto })),
     ...S.faltas.filter(f => f.obs).map(f => ({ col:"faltas", id:f.id, tipo:"Falta", t:f.obs, sub:sub(f.materiaId) + " · " + fmtData(f.data), cor:corDe(f.materiaId), txt:[f.obs] })),
   ];
 }
