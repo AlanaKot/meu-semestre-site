@@ -67,6 +67,12 @@ header{padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
 body::after{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:30;pointer-events:none;
   background:var(--barra, var(--bg));-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
 .dt{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:32px}
+/* botões redondos do topo (tema, sincronizar, buscar, backup), como os ícones da barra dos apps do iPhone */
+.dt .filter{gap:10px}
+header button.topo-btn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;min-width:38px;min-height:38px;padding:0;border:0;border-radius:50%;background:var(--fill);color:var(--accent);cursor:pointer;flex:none}
+header button.topo-btn:hover{background:var(--fill-2)}
+header button.topo-btn svg{width:20px;height:20px}
+header button.topo-btn[hidden]{display:none}
 #hoje{font-size:.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.02em}
 h1{font-family:var(--f-display);font-weight:700;font-size:2.125rem;line-height:1.15;letter-spacing:-.022em;margin:0;text-wrap:balance}
 .sub{color:var(--muted);font-size:.8rem}
@@ -217,8 +223,6 @@ button.mi-folga,button.mi-folga:hover{background:var(--warn-bg);color:var(--warn
 .stats{display:flex;gap:18px 22px;flex-wrap:wrap}
 .stat .label{text-transform:none;letter-spacing:0;font-size:.84rem}
 .stat .v{font-family:var(--f-num);font-size:1.5rem;font-weight:700;font-variant-numeric:tabular-nums}
-#tema{display:inline-flex;align-items:center;justify-content:center;min-width:44px}
-#tema svg{width:22px;height:22px}
 .evols{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px 22px}
 .evol{margin:0}
 .evol figcaption{display:flex;justify-content:space-between;align-items:center;font-weight:500;margin-bottom:4px}
@@ -343,7 +347,7 @@ textarea{min-height:76px;resize:vertical}
   nav a[aria-current="page"] svg{stroke-width:2.2;fill:var(--accent-bg)}
   nav .lg{display:none}
   .dt{flex-wrap:wrap;gap:0}
-  .dt .filter{flex:1 0 100%;justify-content:flex-end;flex-wrap:nowrap;gap:0;margin-right:-10px}
+  .dt .filter{flex:1 0 100%;justify-content:flex-end;flex-wrap:nowrap;gap:10px;margin:4px 0 6px}
   #hoje{order:2}
   header{padding-top:calc(env(safe-area-inset-top,0px) + 2px)}
   #status{padding-bottom:calc(84px + env(safe-area-inset-bottom,0px))}
@@ -377,7 +381,7 @@ textarea{min-height:76px;resize:vertical}
 <header>
   <div class="wrap">
     <div class="dt"><span id="hoje"></span>
-      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="ghost" id="tema" aria-label="Tema: automático" title="Tema">◐</button><button class="ghost" id="sinc" hidden>Sincronizar</button><button class="ghost" id="bkp">Backup</button></div></div>
+      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="topo-btn" id="tema" aria-label="Tema: automático" title="Tema">◐</button><button class="topo-btn" id="sinc" hidden aria-label="Sincronizar" title="Sincronizar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.8 8.6 4.25 4.25 0 0 1 17 18.5"/><path d="M12 12.5v7M9.5 15l2.5-2.5 2.5 2.5"/></svg></button><button class="topo-btn" id="bkp" aria-label="Backup" title="Backup"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></svg></button></div></div>
     <h1 id="titulo">Hoje</h1>
   </div>
 </header>
@@ -2020,7 +2024,8 @@ function abrirBusca(){
   $("#dlg").showModal(); q.focus(); q.select();
 }
 { // botão no topo (antes do Backup) e atalho "/" ou Ctrl+K no computador
-  const b = document.createElement("button"); b.className = "ghost"; b.id = "buscar"; b.textContent = "Buscar";
+  const b = document.createElement("button"); b.className = "topo-btn"; b.id = "buscar"; b.setAttribute("aria-label", "Buscar"); b.title = "Buscar";
+  b.innerHTML = svgI('<circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.3-4.3"/>');
   $("#bkp").before(b); b.onclick = abrirBusca;
   document.addEventListener("keydown", e => {
     const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
