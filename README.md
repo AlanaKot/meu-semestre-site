@@ -21,6 +21,28 @@ Use o backup para:
 - levar os dados de um aparelho para outro (por exemplo, do celular para o computador);
 - não perder nada se os dados do navegador forem limpos.
 
+## Sincronizar entre celular e computador (opcional)
+
+Com o site hospedado, os dados podem ficar iguais em todos os aparelhos. Uma cópia fica numa pasta escondida do **seu** Google Drive, que só o site enxerga. Sem internet, o site continua funcionando e sincroniza depois. Se não quiser usar, nada muda: tudo continua no navegador e o **Backup** continua existindo.
+
+### Preparar uma vez (no computador, uns 15 minutos)
+
+Os nomes dos menus do Google podem mudar um pouco.
+
+1. Entre em [console.cloud.google.com](https://console.cloud.google.com) com sua conta Google e crie um projeto chamado `Meu Semestre`.
+2. Em **APIs e serviços → Biblioteca**, procure **Google Drive API** e clique em **Ativar**.
+3. Em **Google Auth Platform** (ou **Tela de permissão OAuth**), preencha o nome do app e seu e-mail. Em **Público-alvo**, escolha **Externo** e adicione seu e-mail em **Usuários de teste**.
+4. Em **Clientes → Criar cliente**, escolha **Aplicativo da Web**. Em **Origens JavaScript autorizadas**, coloque o endereço do seu site, só o começo (por exemplo `https://seu-usuario.github.io`).
+5. Copie o **ID do cliente**. Ele termina em `.apps.googleusercontent.com`. Isso não é senha: só funciona no endereço que você autorizou.
+
+### Ligar em cada aparelho
+
+1. No site, toque em **Sincronizar**, no topo.
+2. Cole o ID do cliente e toque em **Conectar com o Google**.
+3. Escolha sua conta. O Google pode avisar que o app não foi verificado: como o app é seu, toque em **Continuar**.
+
+Os dados dos aparelhos se juntam, nada é apagado. Depois de cerca de uma hora sem uso, o Google pede para entrar de novo: o topo mostra "Toque em Sincronizar". Para desligar: **Backup → Sincronização… → Desligar neste aparelho**.
+
 ## Usar como aplicativo
 
 Com o site hospedado, dá para instalar o Meu Semestre na tela inicial. Ele ganha ícone próprio, abre sem a barra do navegador e funciona **sem internet**.
