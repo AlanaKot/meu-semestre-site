@@ -923,8 +923,7 @@ function abrirPeriodo(){
   const folgas = S.eventos.filter(e => e.semAula).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
   frm.innerHTML = `<h2>Calendário da faculdade</h2>
     <p class="need">Fora do período das aulas e nos feriados e recessos, o cronograma não mostra aula e o "Faltei hoje" não sugere matérias.</p>
-    <div class="duo"><div class="field"><label for="a_ini">Início das aulas</label><input type="date" id="a_ini" value="${esc(c.aulasIni || "")}"></div>
-      <div class="field"><label for="a_fim">Fim das aulas</label><input type="date" id="a_fim" value="${esc(c.aulasFim || "")}"></div></div>
+    <div class="duo">${campoData("a_ini", "", "Início das aulas", c.aulasIni)}${campoData("a_fim", "", "Fim das aulas", c.aulasFim)}</div>
     <h3>Feriados e recessos</h3>
     ${folgas.length ? `<div class="list">${folgas.map(e => `<div class="row"><div class="grow"><div class="t">${esc(e.titulo)}</div><div class="m">${periodo(e)}</div></div>
       <button type="button" class="ghost" data-folga="${e.id}">Editar</button></div>`).join("")}</div>` : '<p class="empty">Nenhum cadastrado.</p>'}
@@ -935,7 +934,9 @@ function abrirPeriodo(){
   $("#a_nova").onclick = () => { $("#dlg").close(); abrirForm("eventos", null, { semAula:true }); };
   frm.querySelectorAll("[data-folga]").forEach(b => b.onclick = () => { $("#dlg").close(); abrirForm("eventos", b.dataset.folga); });
   frm.onsubmit = async e => { e.preventDefault();
-    const aulasIni = $("#a_ini").value, aulasFim = $("#a_fim").value;
+    const aulasIni = brParaIso($("#a_ini").value), aulasFim = brParaIso($("#a_fim").value);
+    if (aulasIni == null){ mostrarErro("a_ini", "Início das aulas: data inválida. Use dd/mm/aaaa."); return; }
+    if (aulasFim == null){ mostrarErro("a_fim", "Fim das aulas: data inválida. Use dd/mm/aaaa."); return; }
     if (aulasIni && aulasFim && aulasFim < aulasIni){ mostrarErro("a_fim", "O fim das aulas precisa ser depois do início."); return; }
     await salvarConfig({ ...S.config, aulasIni, aulasFim });
     $("#dlg").close(); toast("Salvo"); };
@@ -1348,6 +1349,38 @@ const FORMS = {
     {k:"conteudo",l:"Conteúdo",t:"area"} ]},
 };
 
+/* ---------- datas digitadas ---------- */
+// As datas são digitadas (dd/mm/aaaa) em vez de escolhidas num calendário. Por dentro continuam
+// guardadas como aaaa-mm-dd. Dá para digitar só dd/mm (vale o ano atual) ou o ano com 2 dígitos.
+const isoParaBr = iso => /^\d{4}-\d{2}-\d{2}$/.test(iso || "") ? iso.slice(8,10) + "/" + iso.slice(5,7) + "/" + iso.slice(0,4) : "";
+// devolve "" quando está vazio, null quando a data não existe
+function brParaIso(txt){
+  const t = String(txt || "").trim(); if (!t) return "";
+  const m = t.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?$/); if (!m) return null;
+  const d = +m[1], mes = +m[2], ano = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : new Date().getFullYear();
+  const dt = new Date(ano, mes - 1, d);
+  return dt.getFullYear() === ano && dt.getMonth() === mes - 1 && dt.getDate() === d ? isoDe(dt) : null;
+}
+function campoData(id, nome, rotulo, val){
+  const iso = brParaIso(isoParaBr(val)) ? val : "";
+  return `<div class="field"><label for="${id}">${rotulo}</label><input id="${id}" ${nome ? `name="${nome}"` : ""} type="text" inputmode="numeric" autocomplete="off"
+    maxlength="10" placeholder="dd/mm/aaaa" data-data value="${esc(isoParaBr(iso))}"><span class="need dia-sem">${iso ? fmtData(iso) : ""}</span></div>`;
+}
+// coloca as barras sozinho enquanto digita e mostra o dia da semana embaixo
+document.addEventListener("input", e => {
+  const el = e.target; if (!el.matches?.("[data-data]")) return;
+  let n = el.value.replace(/[^\d/]/g, "");
+  const partes = n.split("/"), manual = partes.length > 1 && partes.slice(0, -1).some(p => p.length !== 2);
+  // só põe as barras sozinho quando a pessoa digita só números (ou já no formato dd/mm); apagando, não mexe
+  if (!e.inputType?.startsWith("delete") && !manual){
+    const d = n.replace(/\//g, "").slice(0, 8);
+    n = d.length > 4 ? d.slice(0,2) + "/" + d.slice(2,4) + "/" + d.slice(4) : d.length > 2 ? d.slice(0,2) + "/" + d.slice(2) : d;
+  }
+  if (el.value !== n) el.value = n;
+  const iso = brParaIso(n), dica = el.parentElement.querySelector(".dia-sem");
+  if (dica) dica.textContent = iso ? fmtData(iso) : n.length >= 5 ? "Data inválida" : "";
+});
+
 function campoHTML(c, v){
   const id = "f_"+c.k, val = v ?? (typeof c.def==="function"?c.def():c.def) ?? "";
   if (c.t==="select"){ const o = typeof c.opts==="function"?c.opts():c.opts;
@@ -1356,6 +1389,7 @@ function campoHTML(c, v){
   if (c.t==="area") return `<div class="field"><label for="${id}">${c.l}</label><textarea id="${id}" name="${c.k}">${esc(val)}</textarea></div>`;
   if (c.t==="cor"){ const cur = val || CORES[S.materias.length % CORES.length];
     return `<div class="field"><span class="label" style="text-transform:none;letter-spacing:0;font-size:.82rem">${c.l}</span><div class="swatches">${CORES.map((h,i)=>`<input type="radio" name="cor" id="cor${i}" value="${h}" ${h===cur?"checked":""}><label for="cor${i}" style="background:${h}" title="${h}"></label>`).join("")}</div></div>`; }
+  if (c.t==="date") return campoData(id, c.k, c.l, val);
   const type = c.t==="num"?"text":c.t;
   return `<div class="field"><label for="${id}">${c.l}</label><input id="${id}" name="${c.k}" type="${type}" ${c.t==="num"?'inputmode="decimal"':""} value="${esc(val)}" ${c.req?"required":""} placeholder="${esc(c.ph||"")}">${c.hint?`<span class="need">${c.hint}</span>`:""}</div>`;
 }
@@ -1364,6 +1398,7 @@ function campoHTML(c, v){
 function validar(col, out, raw){
   for (const c of FORMS[col].campos.flatMap(c => c.duo || [c]))
     if (c.t==="num" && String(raw[c.k] ?? "").trim() !== "" && out[c.k] == null) return [c.k, `${c.l.split(" (")[0]}: use só números.`];
+    else if (c.t==="date" && out[c.k] == null) return [c.k, "Data inválida. Use dd/mm/aaaa, por exemplo 05/03/2026."];
   if (col==="materias" && out.cargaHoraria != null && out.cargaHoraria <= 0) return ["cargaHoraria", "O total de aulas precisa ser maior que zero."];
   if (col==="cronograma"){
     if (!out.inicio || !out.fim) return [out.inicio ? "fim" : "inicio", "Informe o horário de início e de fim."];
@@ -1404,7 +1439,7 @@ function abrirForm(col, id, preset={}){
     e.preventDefault();
     const fd = new FormData(frm), out = {}, raw = {};
     const todos = F.campos.flatMap(c => c.duo || [c]);
-    todos.forEach(c => { if (c.t==="check") out[c.k] = fd.has(c.k); else { let v = fd.get(c.k) ?? ""; raw[c.k] = v; if (c.t==="num") v = num(v); out[c.k] = v; } });
+    todos.forEach(c => { if (c.t==="check") out[c.k] = fd.has(c.k); else { let v = fd.get(c.k) ?? ""; raw[c.k] = v; if (c.t==="num") v = num(v); if (c.t==="date") v = brParaIso(v); out[c.k] = v; } });
     const erro = validar(col, out, raw);
     if (erro){ mostrarErro("f_"+erro[0], erro[1]); return; }
     if (col==="cronograma") out.dia = +out.dia;
