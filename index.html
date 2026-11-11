@@ -132,6 +132,11 @@ tr:last-child td{border-bottom:0}
 button.mi-prova,button.mi-prova:hover{background:var(--accent);color:var(--accent-ink)}
 button.mi-entrega,button.mi-entrega:hover{border-color:var(--accent);background:var(--surface)}
 button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
+button.mi-folga,button.mi-folga:hover{background:var(--warn-bg);color:var(--warn);border-color:transparent}
+.mc.folga{background:color-mix(in srgb,var(--warn-bg) 55%,var(--surface))}
+.chip.folga{background:var(--warn-bg);color:var(--warn);white-space:normal}
+.leg-folga{background:var(--warn-bg)}
+.blk.cancelada{opacity:.55;text-decoration:line-through}
 .mi:hover{filter:brightness(.94)}
 .leg{display:flex;gap:6px 16px;flex-wrap:wrap;font-size:.8rem;color:var(--muted);margin-bottom:18px}
 .leg span{display:inline-flex;align-items:center;gap:6px}
@@ -697,7 +702,8 @@ function abrirPlano(){
 
 function vPainel(){
   const hoje = new Date().getDay();
-  const blocos = S.cronograma.filter(b => +b.dia === hoje).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
+  const folgaHoje = semAula(hojeISO());
+  const blocos = S.cronograma.filter(b => +b.dia === hoje && !(folgaHoje && b.tipo === "aula")).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
   const proximas = [
     ...S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null).map(p => ({ data:p.data, t:esc(p.titulo)+exTag(p),
       sub:`<span class="dot" style="background:${esc(corDe(p.materiaId))}"></span> ${esc(nomeDe(p.materiaId))} · ${fmtData(p.data)}` })),
@@ -720,7 +726,7 @@ function vPainel(){
   return `${avisoExemplo()}
   <div class="grid2">
     <section class="panel">
-      <div class="bar" style="margin-bottom:8px"><h3>Hoje · ${DIAS[hoje]}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
+      <div class="bar" style="margin-bottom:8px"><h3>Hoje · ${DIAS[hoje]}${folgaHoje ? ` <span class="chip folga">sem aula · ${esc(folgaHoje)}</span>` : ""}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
       ${blocos.length ? `<div class="list">${blocos.map(b => `
         <div class="row"><span class="dot" style="background:${esc(corDe(b.materiaId))}"></span>
           <div class="grow"><div class="t">${esc(nomeDe(b.materiaId))}${exTag(b)}</div><div class="m">${esc(b.topico||rotTipo(b.tipo))}</div></div>
@@ -758,17 +764,56 @@ const botaoAgenda = () => FORA_DO_CLAUDE && temAgenda() ? '<button data-acao="ag
 function itensDoDia(iso){
   return [
     ...S.provas.filter(p => p.data === iso).map(p => ({ tipo: p.tipo === "prova" ? "prova" : "entrega", t:p.titulo, sub:nomeDe(p.materiaId), col:"provas", id:p.id })),
-    ...S.eventos.filter(e => e.data && e.data <= iso && iso <= (e.dataFim || e.data)).map(e => ({ tipo:"evento", t:e.titulo, sub:"", col:"eventos", id:e.id })),
+    ...S.eventos.filter(e => e.data && e.data <= iso && iso <= (e.dataFim || e.data)).map(e => ({ tipo: e.semAula ? "folga" : "evento", t:e.titulo, sub:"", col:"eventos", id:e.id })),
   ];
 }
-const ROT_ITEM = { prova:"Prova", entrega:"Entrega", evento:"Evento" };
+const ROT_ITEM = { prova:"Prova", entrega:"Entrega", evento:"Evento", folga:"Sem aula" };
+
+/* ---------- calendário da faculdade ---------- */
+// Dias sem aula: antes do início ou depois do fim das aulas (Ajustar período) e eventos marcados
+// como "Não tem aula" (feriados e recessos). Devolve o motivo, ou null quando é dia de aula normal.
+function semAula(iso){
+  const c = S.config;
+  if (c.aulasIni && iso < c.aulasIni) return "antes do início das aulas";
+  if (c.aulasFim && iso > c.aulasFim) return "aulas encerradas";
+  const e = S.eventos.find(e => e.semAula && e.data && e.data <= iso && iso <= (e.dataFim || e.data));
+  return e ? e.titulo : null;
+}
+// data deste dia da semana na semana atual (segunda a domingo)
+function dataNaSemana(d){
+  const seg = parseD(hojeISO()); seg.setDate(seg.getDate() - ((seg.getDay() + 6) % 7));
+  seg.setDate(seg.getDate() + (d === 0 ? 6 : d - 1)); return isoDe(seg);
+}
+function abrirPeriodo(){
+  const frm = $("#frm"), c = S.config;
+  const folgas = S.eventos.filter(e => e.semAula).sort((a, b) => (a.data || "").localeCompare(b.data || ""));
+  frm.innerHTML = `<h2>Calendário da faculdade</h2>
+    <p class="need">Fora do período das aulas e nos feriados e recessos, o cronograma não mostra aula e o "Faltei hoje" não sugere matérias.</p>
+    <div class="duo"><div class="field"><label for="a_ini">Início das aulas</label><input type="date" id="a_ini" value="${esc(c.aulasIni || "")}"></div>
+      <div class="field"><label for="a_fim">Fim das aulas</label><input type="date" id="a_fim" value="${esc(c.aulasFim || "")}"></div></div>
+    <h3>Feriados e recessos</h3>
+    ${folgas.length ? `<div class="list">${folgas.map(e => `<div class="row"><div class="grow"><div class="t">${esc(e.titulo)}</div><div class="m">${periodo(e)}</div></div>
+      <button type="button" class="ghost" data-folga="${e.id}">Editar</button></div>`).join("")}</div>` : '<p class="empty">Nenhum cadastrado.</p>'}
+    <button type="button" id="a_nova">+ Feriado ou recesso</button>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Salvar</button></div></div>`;
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#a_nova").onclick = () => { $("#dlg").close(); abrirForm("eventos", null, { semAula:true }); };
+  frm.querySelectorAll("[data-folga]").forEach(b => b.onclick = () => { $("#dlg").close(); abrirForm("eventos", b.dataset.folga); });
+  frm.onsubmit = async e => { e.preventDefault();
+    const aulasIni = $("#a_ini").value, aulasFim = $("#a_fim").value;
+    if (aulasIni && aulasFim && aulasFim < aulasIni){ mostrarErro("a_fim", "O fim das aulas precisa ser depois do início."); return; }
+    await salvarConfig({ ...S.config, aulasIni, aulasFim });
+    $("#dlg").close(); toast("Salvo"); };
+  $("#dlg").showModal();
+}
 function vMes(){
   const y = mesRef.getFullYear(), m = mesRef.getMonth(), hoje = hojeISO();
   const diasNoMes = new Date(y, m+1, 0).getDate(), semanas = Math.ceil((mesRef.getDay() + diasNoMes) / 7);
   let celulas = "";
   for (let i = 0; i < semanas * 7; i++){
     const d = new Date(y, m, 1 - mesRef.getDay() + i), iso = isoDe(d);
-    celulas += `<div class="mc ${d.getMonth()!==m?"fora":""} ${iso===hoje?"hoje":""}">
+    celulas += `<div class="mc ${d.getMonth()!==m?"fora":""} ${iso===hoje?"hoje":""} ${semAula(iso)?"folga":""}">
       <button class="mn" data-novo="eventos" data-data="${iso}" aria-label="Adicionar evento em ${d.getDate()} de ${d.toLocaleDateString("pt-BR",{month:"long"})}">${d.getDate()}</button>
       ${itensDoDia(iso).map(it => `<button class="mi mi-${it.tipo}" data-edit="${it.col}" data-id="${it.id}" title="${esc(ROT_ITEM[it.tipo]+": "+it.t+(it.sub?" · "+it.sub:""))}"><span class="mt">${esc(it.t)}${it.sub?" · "+esc(it.sub):""}</span></button>`).join("")}
     </div>`;
@@ -776,14 +821,14 @@ function vMes(){
   const ini = isoDe(mesRef), fim = isoDe(new Date(y, m+1, 0));
   const lista = [
     ...S.provas.filter(p => p.data && p.data >= ini && p.data <= fim).map(p => ({ data:p.data, tipo: p.tipo === "prova" ? "prova" : "entrega", t:esc(p.titulo)+exTag(p), sub:esc(nomeDe(p.materiaId))+" · "+fmtData(p.data), col:"provas", id:p.id })),
-    ...S.eventos.filter(e => e.data && e.data <= fim && (e.dataFim || e.data) >= ini).map(e => ({ data:e.data, tipo:"evento", t:esc(e.titulo)+exTag(e), sub:periodo(e)+(e.obs?" · "+esc(e.obs):""), col:"eventos", id:e.id })),
+    ...S.eventos.filter(e => e.data && e.data <= fim && (e.dataFim || e.data) >= ini).map(e => ({ data:e.data, tipo: e.semAula ? "folga" : "evento", t:esc(e.titulo)+exTag(e), sub:periodo(e)+(e.obs?" · "+esc(e.obs):""), col:"eventos", id:e.id })),
   ].sort((a,b) => a.data.localeCompare(b.data));
   return `${avisoExemplo()}
   <div class="bar"><div class="mesnav"><h2>${mesRef.toLocaleDateString("pt-BR",{month:"long",year:"numeric"}).replace(/^./, c => c.toUpperCase())}</h2>
       <button data-mes="-1" aria-label="Mês anterior">‹</button><button data-mes="0">Hoje</button><button data-mes="1" aria-label="Próximo mês">›</button></div>
-    <div class="filter">${seletorVis()}${botaoAgenda()}<button class="primary" data-novo="eventos">+ Evento</button></div></div>
+    <div class="filter">${seletorVis()}${botaoAgenda()}<button data-acao="periodo">Feriados e período</button><button class="primary" data-novo="eventos">+ Evento</button></div></div>
   <div class="mes">${DIAS_CURTO.map(d => `<div class="mh">${d}</div>`).join("")}${celulas}</div>
-  <div class="leg"><span><i style="background:var(--accent)"></i>Prova</span><span><i style="border-color:var(--accent)"></i>Entrega</span><span><i style="background:var(--surface-2);border-color:var(--line)"></i>Evento</span><span>Toque no número do dia para criar um evento.</span></div>
+  <div class="leg"><span><i style="background:var(--accent)"></i>Prova</span><span><i style="border-color:var(--accent)"></i>Entrega</span><span><i style="background:var(--surface-2);border-color:var(--line)"></i>Evento</span><span><i class="leg-folga"></i>Sem aula</span><span>Toque no número do dia para criar um evento.</span></div>
   <section class="panel"><h3>Neste mês</h3>${lista.length ? `<div class="list">${lista.map(it => `
     <div class="row"><div class="count"><b>${parseD(it.data).getDate()}</b>${DIAS_CURTO[parseD(it.data).getDay()].toLowerCase()}</div>
       <div class="grow"><div class="t">${it.t} <span class="chip">${ROT_ITEM[it.tipo]}</span></div><div class="m">${it.sub}</div></div>
@@ -798,11 +843,13 @@ function vCronograma(){
     return a + Math.max(0,(h2*60+m2)-(h1*60+m1)); },0) / 60;
   return `${avisoExemplo()}
   <div class="bar"><div><h2>Cronograma semanal</h2><div class="need">Estudo planejado: <b class="num">${fmt(horas)} h</b> por semana (sem contar aulas)</div></div>
-    <div class="filter">${seletorVis()}<button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
+    <div class="filter">${seletorVis()}<button data-acao="periodo">Feriados e período</button><button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
   <div class="week">${ordem.map(d => {
     const bl = S.cronograma.filter(b => +b.dia === d).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
-    return `<div class="day ${d===hoje?"today":""}"><h3><span>${DIAS[d]}</span><button class="ghost" data-novo="cronograma" data-dia="${d}" aria-label="Adicionar em ${DIAS[d]}">+</button></h3>
-      ${bl.map(b => `<button class="blk" style="--c:${esc(corDe(b.materiaId))}" data-edit="cronograma" data-id="${b.id}">
+    const dt = dataNaSemana(d), folga = semAula(dt);
+    return `<div class="day ${d===hoje?"today":""}"><h3><span>${DIAS[d]} <span class="need num">${parseD(dt).getDate()}/${parseD(dt).getMonth()+1}</span></span><button class="ghost" data-novo="cronograma" data-dia="${d}" aria-label="Adicionar em ${DIAS[d]}">+</button></h3>
+      ${folga ? `<span class="chip folga">Sem aula · ${esc(folga)}</span>` : ""}
+      ${bl.map(b => `<button class="blk ${folga && b.tipo === "aula" ? "cancelada" : ""}" style="--c:${esc(corDe(b.materiaId))}" data-edit="cronograma" data-id="${b.id}">
         <div class="h">${esc(b.inicio||"")}–${esc(b.fim||"")} · ${rotTipo(b.tipo)}</div>
         <div class="n">${esc(nomeDe(b.materiaId))}${exTag(b)}</div>${b.topico?`<div class="p">${esc(b.topico)}</div>`:""}</button>`).join("") || '<span class="need">livre</span>'}
     </div>`; }).join("")}</div>`;
@@ -1150,6 +1197,7 @@ const FORMS = {
   eventos: { titulo:"Evento", masc:true, campos:[
     {k:"titulo",l:"Nome do evento",t:"text",req:1,ph:"Ex.: Semana do Contador"},
     {duo:[{k:"data",l:"Dia",t:"date",def:hojeISO},{k:"dataFim",l:"Até (opcional)",t:"date"}]},
+    {k:"semAula",l:"Não tem aula nesses dias (feriado ou recesso)",t:"check"},
     {k:"obs",l:"Observação",t:"text"} ]},
   tarefas: { titulo:"Tarefa", campos:[
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
@@ -1280,7 +1328,8 @@ function abrirConfig(){
 function abrirFaltei(){
   if (!S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
   const hoje = hojeISO(), dia = new Date().getDay(), aulasHoje = {};
-  S.cronograma.filter(b => +b.dia === dia && b.tipo === "aula" && b.inicio && b.fim).forEach(b => {
+  const folga = semAula(hoje);
+  S.cronograma.filter(b => !folga && +b.dia === dia && b.tipo === "aula" && b.inicio && b.fim).forEach(b => {
     const [h1,m1] = b.inicio.split(":").map(Number), [h2,m2] = b.fim.split(":").map(Number);
     aulasHoje[b.materiaId] = (aulasHoje[b.materiaId] || 0) + Math.max(1, Math.round(((h2*60+m2) - (h1*60+m1)) / 50));
   });
@@ -1289,6 +1338,7 @@ function abrirFaltei(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Faltei hoje</h2>
     <p class="need"><b>${fmtData(hoje)}</b> · Marque as matérias e confira quantas aulas você perdeu em cada uma.</p>
+    ${folga ? `<p class="need"><span class="chip folga">Hoje não tem aula · ${esc(folga)}</span></p>` : ""}
     <div class="faltei">${lista.map(m => `<div class="row">
       <label class="est manter"><input type="checkbox" name="fm" id="fm_${m.id}" value="${m.id}" ${aulasHoje[m.id] && !jaTem(m.id) ? "checked" : ""}>
         <span><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}
@@ -1605,6 +1655,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao==="lembretes") abrirLembretes();
   else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.dataset.acao==="faltei") abrirFaltei();
+  else if (b.dataset.acao==="periodo") abrirPeriodo();
   else if (b.dataset.acao?.startsWith("foco")) acaoFoco(b.dataset.acao);
   else if (b.dataset.hist) apagarHistorico(b);
   else if (b.dataset.acao==="notas") abrirNotas(b.dataset.id);
