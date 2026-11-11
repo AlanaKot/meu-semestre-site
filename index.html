@@ -141,6 +141,10 @@ button.mi-evento,button.mi-evento:hover{background:var(--surface-2)}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:8px;min-width:0}
 .card>.t::before,.card .bar .t::before{content:"";display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--c);margin-right:8px}
 .stats{display:flex;gap:18px;flex-wrap:wrap}
+.achado{width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;color:inherit;font:inherit;cursor:pointer;min-height:44px}
+.achado:hover{background:var(--surface-2)}
+.achado mark{background:var(--warn-bg);color:inherit;border-radius:2px;padding:0 1px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 .foco{display:flex;gap:12px 18px;align-items:flex-end;flex-wrap:wrap;justify-content:space-between}
 .foco .relogio{font-family:var(--f-mono);font-size:2.4rem;font-weight:600;line-height:1;color:var(--ink)}
 .stat .v{font-family:var(--f-mono);font-size:1.3rem;font-weight:600}
@@ -1531,6 +1535,76 @@ $("#view").addEventListener("change", e => {
 });
 window.addEventListener("hashchange", render);
 $("#bkp").onclick = abrirBackup;
+
+/* ---------- busca ---------- */
+// Procura em tudo pelo texto, ignorando acentos e maiúsculas ("calculo" acha "Cálculo").
+const semAcento = t => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+function itensBusca(){
+  const sub = id => nomeDe(id);
+  return [
+    ...S.materias.map(m => ({ col:"materias", id:m.id, tipo:"Matéria", t:m.nome, sub:m.professor || "", cor:m.cor, txt:[m.nome, m.professor] })),
+    ...S.materias.filter(m => m.anotacoes || (m.links || []).length).map(m => ({ col:"notas", id:m.id, tipo:"Anotações", t:m.nome, sub:"", cor:m.cor,
+        txt:[m.anotacoes, ...(m.links || []).flatMap(l => [l.titulo, l.url])], trecho:m.anotacoes })),
+    ...S.provas.map(p => ({ col:"provas", id:p.id, tipo:rotProva(p.tipo), t:p.titulo, sub:sub(p.materiaId) + (p.data ? " · " + fmtData(p.data) : ""), cor:corDe(p.materiaId), txt:[p.titulo, p.conteudo, sub(p.materiaId)], trecho:p.conteudo })),
+    ...S.tarefas.map(x => ({ col:"tarefas", id:x.id, tipo:x.feita ? "Tarefa feita" : "Tarefa", t:x.titulo, sub:sub(x.materiaId) + (x.data ? " · até " + fmtData(x.data) : ""), cor:corDe(x.materiaId), txt:[x.titulo, sub(x.materiaId)] })),
+    ...S.eventos.map(e => ({ col:"eventos", id:e.id, tipo:"Evento", t:e.titulo, sub:periodo(e), cor:"#6b7a8f", txt:[e.titulo, e.obs], trecho:e.obs })),
+    ...S.cronograma.filter(b => b.topico).map(b => ({ col:"cronograma", id:b.id, tipo:rotTipo(b.tipo), t:b.topico, sub:sub(b.materiaId) + " · " + DIAS[b.dia], cor:corDe(b.materiaId), txt:[b.topico] })),
+    ...S.faltas.filter(f => f.obs).map(f => ({ col:"faltas", id:f.id, tipo:"Falta", t:f.obs, sub:sub(f.materiaId) + " · " + fmtData(f.data), cor:corDe(f.materiaId), txt:[f.obs] })),
+  ];
+}
+// mostra o pedaço do texto em volta do que foi achado, com o termo destacado
+function destacar(texto, q){
+  const t = String(texto ?? ""), i = semAcento(t).indexOf(q);
+  if (i < 0) return esc(t);
+  return esc(t.slice(0, i)) + "<mark>" + esc(t.slice(i, i + q.length)) + "</mark>" + esc(t.slice(i + q.length));
+}
+function trechoDe(texto, q){
+  const t = String(texto ?? "").replace(/\s+/g, " "), i = semAcento(t).indexOf(q);
+  if (i < 0) return "";
+  const ini = Math.max(0, i - 30);
+  return (ini ? "…" : "") + destacar(t.slice(ini, i + q.length + 50), q) + (i + q.length + 50 < t.length ? "…" : "");
+}
+function resultadosBusca(q){
+  q = semAcento(q.trim());
+  if (!q) return '<p class="empty">Digite para procurar em matérias, provas, tarefas, eventos, cronograma e anotações.</p>';
+  const ach = itensBusca().filter(it => it.txt.some(x => semAcento(x).includes(q)));
+  if (!ach.length) return '<p class="empty">Nada encontrado.</p>';
+  return `<div class="list">${ach.slice(0, 40).map(it => `<button type="button" class="row achado" data-col="${it.col}" data-id="${it.id}">
+      <span class="dot" style="background:${esc(it.cor)}"></span>
+      <span class="grow"><span class="t">${destacar(it.t, q)}</span> <span class="chip">${esc(it.tipo)}</span>
+        ${it.sub ? `<span class="m" style="display:block">${esc(it.sub)}</span>` : ""}
+        ${it.trecho && !semAcento(it.t).includes(q) ? `<span class="m" style="display:block">${trechoDe(it.trecho, q)}</span>` : ""}</span></button>`).join("")}</div>
+    ${ach.length > 40 ? `<p class="need">Mostrando 40 de ${ach.length}. Digite mais para filtrar.</p>` : ""}`;
+}
+function abrirBusca(){
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Buscar</h2>
+    <div class="field"><label for="q_busca" class="sr">Buscar</label><input id="q_busca" type="search" autocomplete="off" placeholder="Ex.: P1, lista, cálculo" value="${esc(abrirBusca.ultima || "")}"></div>
+    <div id="q_res">${resultadosBusca(abrirBusca.ultima || "")}</div>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+  frm.onsubmit = e => e.preventDefault();
+  $("#cancel").onclick = () => $("#dlg").close();
+  const q = $("#q_busca");
+  q.oninput = () => { abrirBusca.ultima = q.value; $("#q_res").innerHTML = resultadosBusca(q.value); };
+  $("#q_res").onclick = e => {
+    const b = e.target.closest(".achado"); if (!b) return;
+    $("#dlg").close();
+    if (b.dataset.col === "notas") abrirNotas(b.dataset.id);
+    else abrirForm(b.dataset.col, b.dataset.id);
+  };
+  $("#dlg").showModal(); q.focus(); q.select();
+}
+{ // botão no topo (antes do Backup) e atalho "/" ou Ctrl+K no computador
+  const b = document.createElement("button"); b.className = "ghost"; b.id = "buscar"; b.textContent = "Buscar";
+  $("#bkp").before(b); b.onclick = abrirBusca;
+  document.addEventListener("keydown", e => {
+    const digitando = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName);
+    if ((e.key === "/" && !digitando) || (e.key.toLowerCase() === "k" && (e.ctrlKey || e.metaKey))){
+      if ($("#dlg").open) return;
+      e.preventDefault(); abrirBusca();
+    }
+  });
+}
 
 /* ---------- tema claro/escuro ---------- */
 // Automático segue o tema do celular ou computador. Claro e Escuro fixam a escolha neste aparelho.
