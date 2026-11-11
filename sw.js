@@ -1,7 +1,7 @@
 // Service worker: um programinha que o navegador roda em segundo plano.
 // Ele guarda uma cópia do site para abrir mesmo sem internet.
 // Ao mudar este arquivo ou os ícones, aumente a VERSAO para os aparelhos baixarem a cópia nova.
-const VERSAO = "meu-semestre-v2";
+const VERSAO = "meu-semestre-v3";
 const ARQUIVOS = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
