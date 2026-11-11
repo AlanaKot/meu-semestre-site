@@ -491,7 +491,7 @@ async function iniciar(){
   if (!cdb) {
     mode = "local"; loadLocal();
     $("#status").textContent = "Salvo neste navegador";
-    render(); iniciarSinc(); return;
+    render(); iniciarSinc(); setTimeout(avisoDoDia, 1500); return;
   }
   db = cdb;
   const timer = setTimeout(() => { $("#status").textContent = "Sem conexão com seus dados ainda…"; }, 10000);
@@ -705,7 +705,7 @@ function vPainel(){
         : `<p class="empty">Nada marcado para hoje. Use o Cronograma para montar sua semana.</p>`}
     </section>
     <section class="panel">
-      <div class="bar" style="margin-bottom:8px"><h3>Próximos compromissos</h3><button class="ghost" data-novo="provas">+ Prova</button></div>
+      <div class="bar" style="margin-bottom:8px"><h3>Próximos compromissos</h3><div class="filter">${FORA_DO_CLAUDE ? '<button class="ghost" data-acao="lembretes">Lembretes</button>' : ""}<button class="ghost" data-novo="provas">+ Prova</button></div></div>
       ${proximas.length ? `<div class="list">${proximas.map(p => { const real = diasAte(p.data), d = Math.max(0, real); return `
         <div class="row"><div class="count"><b>${d===0?"hoje":d}</b>${d===0?"":d===1?"dia":"dias"}</div>
           <div class="grow"><div class="t">${p.t}</div><div class="m">${p.sub}</div></div>
@@ -727,7 +727,8 @@ const rotTipo = t => ({aula:"Aula",estudo:"Estudo",revisao:"Revisão",lista:"Lis
 let visCron = "semana"; try { visCron = localStorage.getItem("meu-semestre-vis") === "mes" ? "mes" : "semana"; } catch(e){}
 let mesRef = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 const seletorVis = () => `<div class="seg" role="group" aria-label="Visão"><button data-vis="semana" aria-pressed="${visCron==="semana"}">Semana</button><button data-vis="mes" aria-pressed="${visCron==="mes"}">Mês</button></div>`;
-const temAgenda = () => S.provas.some(p => p.data && diasAte(p.data) >= 0) || S.eventos.some(e => e.data && diasAte(e.dataFim || e.data) >= 0);
+const temAgenda = () => S.provas.some(p => p.data && diasAte(p.data) >= 0) || S.eventos.some(e => e.data && diasAte(e.dataFim || e.data) >= 0)
+  || S.tarefas.some(t => !t.feita && t.data && diasAte(t.data) >= 0);
 const botaoAgenda = () => FORA_DO_CLAUDE && temAgenda() ? '<button data-acao="agenda">Enviar para a agenda</button>' : "";
 // provas, entregas e eventos de um dia
 function itensDoDia(iso){
@@ -1288,19 +1289,74 @@ function gerarICS(){
   const itens = [
     ...S.provas.filter(p => p.data && diasAte(p.data) >= 0).map(p => ({ id:p.id, data:p.data, fim:p.data, titulo:p.titulo, resumo:`${p.titulo} · ${nomeDe(p.materiaId)}`, conteudo:p.conteudo })),
     ...S.eventos.filter(e => e.data && diasAte(e.dataFim || e.data) >= 0).map(e => ({ id:e.id, data:e.data, fim:e.dataFim || e.data, titulo:e.titulo, resumo:e.titulo, conteudo:e.obs })),
+    ...S.tarefas.filter(t => !t.feita && t.data && diasAte(t.data) >= 0).map(t => ({ id:t.id, data:t.data, fim:t.data, titulo:t.titulo, resumo:`Tarefa: ${t.titulo} · ${nomeDe(t.materiaId)}`, tarefa:true })),
   ].sort((a,b) => a.data.localeCompare(b.data));
   itens.forEach(p => {
     L.push("BEGIN:VEVENT", "UID:"+p.id+"@meu-semestre", "DTSTAMP:"+agora,
       "DTSTART;VALUE=DATE:"+dia(p.data), "DTEND;VALUE=DATE:"+seguinte(p.fim),
       "SUMMARY:"+txt(p.resumo));
     if (p.conteudo) L.push("DESCRIPTION:"+txt(p.conteudo));
-    // avisos às 9h: uma semana antes e na véspera
-    L.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" em uma semana"),"TRIGGER:-P6DT15H","END:VALARM",
-           "BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" amanhã"),"TRIGGER:-PT15H","END:VALARM","END:VEVENT");
+    // avisos às 9h: uma semana antes (só provas e eventos) e na véspera
+    if (!p.tarefa) L.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" em uma semana"),"TRIGGER:-P6DT15H","END:VALARM");
+    L.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+txt(p.titulo+" amanhã"),"TRIGGER:-PT15H","END:VALARM","END:VEVENT");
   });
   L.push("END:VCALENDAR");
   return { n: itens.length, ics: L.map(dobrar).join("\r\n") + "\r\n" };
 }
+/* ---------- lembretes ---------- */
+// Com o site fechado, quem avisa é a agenda do celular (arquivo .ics com alarmes).
+// Com o site aberto, dá para mostrar uma notificação do sistema uma vez por dia.
+const LS_AVISOS = "meu-semestre-avisos";
+let avisos = {}; try { avisos = JSON.parse(localStorage.getItem(LS_AVISOS)) || {}; } catch(e){}
+const guardarAvisos = () => { try { localStorage.setItem(LS_AVISOS, JSON.stringify(avisos)); } catch(e){} };
+const podeNotificar = () => "Notification" in window && Notification.permission === "granted";
+// o que vence hoje ou amanhã e ainda está pendente
+function vencendo(){
+  const perto = d => d === 0 || d === 1, quando = d => d === 0 ? "hoje" : "amanhã";
+  return [
+    ...S.provas.filter(p => p.data && num(p.nota) == null && perto(diasAte(p.data))).map(p => `${p.titulo} (${nomeDe(p.materiaId)}) ${quando(diasAte(p.data))}`),
+    ...S.eventos.filter(e => e.data && perto(diasAte(e.data))).map(e => `${e.titulo} ${quando(diasAte(e.data))}`),
+    ...S.tarefas.filter(t => !t.feita && t.data && (perto(diasAte(t.data)) || diasAte(t.data) < 0)).map(t => `Tarefa: ${t.titulo} ${diasAte(t.data) < 0 ? "atrasada" : quando(diasAte(t.data))}`),
+  ];
+}
+async function notificar(titulo, corpo){
+  const op = { body: corpo, icon: "icon-192.png", badge: "icon-192.png", tag: "meu-semestre" };
+  try { const reg = await navigator.serviceWorker?.getRegistration(); if (reg){ await reg.showNotification(titulo, op); return; } } catch(e){}
+  try { new Notification(titulo, op); } catch(e){}
+}
+function avisoDoDia(){
+  if (!FORA_DO_CLAUDE || !avisos.ligado || !podeNotificar() || avisos.ultimo === hojeISO()) return;
+  const l = vencendo(); avisos.ultimo = hojeISO(); guardarAvisos();
+  if (l.length) notificar(l.length === 1 ? "Meu Semestre: 1 lembrete" : `Meu Semestre: ${l.length} lembretes`, l.slice(0, 5).join("\n") + (l.length > 5 ? `\ne mais ${l.length - 5}` : ""));
+}
+function abrirLembretes(){
+  const frm = $("#frm"), temNotif = "Notification" in window;
+  frm.innerHTML = `<h2>Lembretes</h2>
+    <h3>Com o site fechado: agenda do celular</h3>
+    <p class="need">Baixe o arquivo e abra no celular: as provas, eventos e tarefas com prazo vão para a sua agenda, com aviso na véspera às 9h (provas e eventos também uma semana antes). A agenda avisa mesmo com o site fechado.</p>
+    <p class="need">Quando cadastrar coisas novas, baixe de novo: os eventos que já estavam lá são atualizados, não duplicados.</p>
+    <button type="button" class="primary" id="lmAgenda" ${temAgenda() ? "" : "disabled"}>${temAgenda() ? "Baixar arquivo da agenda" : "Nada com data à frente"}</button>
+    <h3 style="margin-top:16px">Com o site aberto: notificação</h3>
+    ${temNotif ? `<label class="est manter" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="lmNotif" ${avisos.ligado && podeNotificar() ? "checked" : ""}> Avisar o que vence hoje e amanhã, uma vez por dia, quando abrir o site</label>
+      <p class="need" id="lmInfo">${Notification.permission === "denied" ? "As notificações estão bloqueadas para este site. Libere nas configurações do navegador." : ""}</p>`
+      : `<p class="need">Este navegador não mostra notificações. No iPhone, elas só funcionam com o site instalado como aplicativo.</p>`}
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+  frm.onsubmit = e => e.preventDefault();
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#lmAgenda").onclick = exportarAgenda;
+  const cx = $("#lmNotif");
+  if (cx) cx.onchange = async () => {
+    if (!cx.checked){ avisos.ligado = false; guardarAvisos(); return; }
+    const r = Notification.permission === "granted" ? "granted" : await Notification.requestPermission().catch(() => "denied");
+    if (r !== "granted"){ cx.checked = false; $("#lmInfo").textContent = "Sem permissão para notificar. Libere nas configurações do navegador."; return; }
+    avisos.ligado = true; avisos.ultimo = null; guardarAvisos();
+    const l = vencendo();
+    notificar("Lembretes ligados", l.length ? l.slice(0, 5).join("\n") : "Nada vence hoje ou amanhã.");
+    avisos.ultimo = hojeISO(); guardarAvisos();
+  };
+  $("#dlg").showModal();
+}
+
 function exportarAgenda(){
   const { n, ics } = gerarICS();
   const a = document.createElement("a");
@@ -1339,6 +1395,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.id==="cfg") abrirConfig();
   else if (b.dataset.acao==="backup") abrirBackup();
   else if (b.dataset.acao==="agenda") exportarAgenda();
+  else if (b.dataset.acao==="lembretes") abrirLembretes();
   else if (b.dataset.acao==="plano") abrirPlano();
   else if (b.dataset.acao==="faltei") abrirFaltei();
   else if (b.dataset.hist) apagarHistorico(b);

@@ -1,7 +1,7 @@
 // Service worker: um programinha que o navegador roda em segundo plano.
 // Ele guarda uma cópia do site para abrir mesmo sem internet.
 // Ao mudar este arquivo ou os ícones, aumente a VERSAO para os aparelhos baixarem a cópia nova.
-const VERSAO = "meu-semestre-v1";
+const VERSAO = "meu-semestre-v2";
 const ARQUIVOS = ["./", "index.html", "manifest.webmanifest", "icon-192.png", "icon-512.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -42,4 +42,13 @@ self.addEventListener("fetch", e => {
   if (url.origin === location.origin) {
     e.respondWith(caches.match(req).then(r => r || fetch(req)));
   }
+});
+
+// toque na notificação de lembrete: abre o site (ou traz a aba aberta para frente)
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type:"window", includeUncontrolled:true }).then(cs => {
+    const c = cs.find(c => "focus" in c);
+    return c ? c.focus() : self.clients.openWindow("./");
+  }));
 });
