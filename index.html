@@ -245,7 +245,7 @@ const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], config:{ mediaMin:6, freqMin:75 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -310,7 +310,7 @@ async function iniciar(){
     mode = "nuvem"; pronto(c, snap); render();
   }, () => { clearTimeout(timer); $("#status").textContent = "Erro ao carregar dados"; }));
   db.doc("config/geral").onSnapshot(snap => {
-    if (snap.exists) S.config = { mediaMin:6, freqMin:75, ...snap.data() };
+    if (snap.exists) S.config = { mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0, ...snap.data() };
     pronto("config", snap); render();
   }, () => {});
 }
@@ -330,6 +330,22 @@ function calcNotas(its){
   let precisa = null;
   if (resta > 0) precisa = (S.config.mediaMin * pesoTotal - soma) / resta;
   return { media, precisa, resta, n: its.length };
+}
+// exame final: média final = (média do semestre + nota do exame) ÷ 2.
+// Só vale quando todas as avaliações têm nota e a média ficou abaixo da mínima.
+function calcExame(n){
+  if (!n.n || n.resta > 0 || n.media == null || n.media >= S.config.mediaMin) return null;
+  const minFinal = num(S.config.exameMedia) ?? 5, direito = num(S.config.exameDireito) ?? 0;
+  if (n.media < direito) return { semDireito:true };
+  // arredonda para cima na 1ª casa, para nunca mostrar menos do que o necessário
+  return { precisa: Math.max(0, Math.ceil((2 * minFinal - n.media) * 10 - 1e-9) / 10) };
+}
+function textoExame(n){
+  const e = calcExame(n);
+  if (!e) return "";
+  if (e.semDireito) return '<span class="chip bad">sem direito a exame</span>';
+  if (e.precisa > 10) return '<span class="chip bad">não dá mais nem com exame</span>';
+  return `precisa de <b class="num">${fmt(e.precisa)}</b> no exame`;
 }
 function resumoFaltas(materiaId){
   const m = mat(materiaId);
@@ -477,6 +493,7 @@ function vPainel(){
     const pct = f.limite ? Math.min(100, f.total / f.limite * 100) : 0;
     let need = "";
     if (n.precisa != null && n.n) need = n.precisa > 10 ? `<span class="chip bad">média fora de alcance</span>` : n.precisa <= 0 ? `<span class="chip ok">já garantida</span>` : `precisa de <b class="num">${fmt(n.precisa)}</b> no restante`;
+    else need = textoExame(n);
     return `<tr>
       <td><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}${exTag(m)}</td>
       <td>${chipMedia(n.media)}<div class="need">${need}</div></td>
@@ -586,7 +603,7 @@ function vProvas(){
       ${n!=null?`<span class="big">${fmt(n)}<span class="need">/${fmt(mx)}</span></span>`:(p.data&&diasAte(p.data)<0?'<span class="chip warn">lançar nota</span>':"")}
       <button class="ghost" data-edit="provas" data-id="${p.id}">Editar</button></div>`; };
   const cards = S.materias.filter(m => !filtroProvas || m.id === filtroProvas).map(m => { const r = resumoNotas(m.id);
-    return `<div class="stat"><div class="label">${esc(m.nome)}</div><div>${chipMedia(r.media)} ${r.precisa!=null&&r.n&&r.precisa>0&&r.precisa<=10?`<span class="need">precisa de ${fmt(r.precisa)}</span>`:""}</div></div>`; }).join("");
+    return `<div class="stat"><div class="label">${esc(m.nome)}</div><div>${chipMedia(r.media)} ${r.precisa!=null&&r.n&&r.precisa>0&&r.precisa<=10?`<span class="need">precisa de ${fmt(r.precisa)}</span>`:`<span class="need">${textoExame(r)}</span>`}</div></div>`; }).join("");
   return `${avisoExemplo()}
   <div class="bar"><h2>Provas e notas</h2>
     <div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select>
@@ -839,13 +856,20 @@ function abrirConfig(){
   frm.innerHTML = `<h2>Critérios de aprovação</h2>
     <div class="field"><label for="c_media">Média mínima para aprovação (0 a 10)</label><input id="c_media" inputmode="decimal" value="${esc(fmt(S.config.mediaMin))}"></div>
     <div class="field"><label for="c_freq">Frequência mínima (%)</label><input id="c_freq" inputmode="numeric" value="${esc(S.config.freqMin)}"><span class="need">Com 75%, pode faltar até 25% das aulas.</span></div>
+    <h3 style="margin-top:6px">Exame final</h3>
+    <p class="need">Média final = (média do semestre + nota do exame) ÷ 2.</p>
+    <div class="field"><label for="c_exame">Média final mínima depois do exame (0 a 10)</label><input id="c_exame" inputmode="decimal" value="${esc(fmt(num(S.config.exameMedia) ?? 5))}"></div>
+    <div class="field"><label for="c_direito">Média mínima para ter direito ao exame (0 a 10)</label><input id="c_direito" inputmode="decimal" value="${esc(fmt(num(S.config.exameDireito) ?? 0))}"><span class="need">Use 0 se qualquer média pode fazer o exame.</span></div>
     <p class="erro" id="erro" role="alert" hidden></p>
     <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Salvar</button></div></div>`;
   frm.onsubmit = async e => { e.preventDefault();
     const mediaMin = num($("#c_media").value), freqMin = num($("#c_freq").value);
     if (mediaMin == null || mediaMin < 0 || mediaMin > 10){ mostrarErro("c_media", "A média mínima precisa ficar entre 0 e 10."); return; }
     if (freqMin == null || freqMin < 1 || freqMin > 100){ mostrarErro("c_freq", "A frequência mínima precisa ficar entre 1 e 100."); return; }
-    await salvarConfig({ ...S.config, mediaMin, freqMin });
+    const exameMedia = num($("#c_exame").value), exameDireito = num($("#c_direito").value);
+    if (exameMedia == null || exameMedia < 0 || exameMedia > 10){ mostrarErro("c_exame", "A média final do exame precisa ficar entre 0 e 10."); return; }
+    if (exameDireito == null || exameDireito < 0 || exameDireito > 10){ mostrarErro("c_direito", "A média para ter direito ao exame precisa ficar entre 0 e 10."); return; }
+    await salvarConfig({ ...S.config, mediaMin, freqMin, exameMedia, exameDireito });
     $("#dlg").close(); toast("Salvo"); };
   $("#cancel").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
