@@ -13,15 +13,16 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <script>
 // aplica o tema escolhido antes de desenhar a página, para não piscar claro
-try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch(e){}
+try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  const c = localStorage.getItem("meu-semestre-cor"); if (c) document.documentElement.dataset.cor = c; } catch(e){}
 </script>
 <style>
 /* Visual no padrão dos apps do iPhone: título grande, listas agrupadas em quadros sobre fundo cinza,
-   barra de abas embaixo no celular (pílula flutuante no topo em telas largas) e o azul do iPhone 14 como cor do app. */
+   barra de abas embaixo no celular (pílula flutuante no topo em telas largas). A cor do app é escolhida no botão Aparência (azul do iPhone 14 por padrão). */
 :root{
   --bg:#f2f2f7; --surface:#ffffff; --surface-2:#e9e9ee; --line:rgba(60,60,67,.2);
   --fg:#000000; --muted:#6c6c70; --ink:#8e8e93;
-  --accent:#2d5f8b; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(86,134,178,.16); --accent-txt:#2d5f8b;
+  --accent:var(--c-claro); --accent-fill:var(--c-fundo); --accent-ink:#ffffff; --accent-bg:var(--c-claro-bg); --accent-txt:var(--c-claro);
   --fill:rgba(118,118,128,.12); --fill-2:rgba(118,118,128,.24);
   --barra:rgba(249,249,249,.82); --folha:#f2f2f7; --campo:#ffffff;
   --ok:#1a7f3c; --warn:#946200; --bad:#c9281e;
@@ -30,11 +31,15 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
   --f-display:-apple-system,BlinkMacSystemFont,"SF Pro Display",system-ui,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
   --f-num:ui-rounded,"SF Pro Rounded",-apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",Roboto,sans-serif;
   --r:14px; --mola:cubic-bezier(.16,1,.3,1);
+  /* cor do app (azul é a padrão). Cada cor tem: texto no claro, texto no escuro, fundo de botão e o degradê do quadro principal */
+  --c-claro:#2d5f8b; --c-claro-bg:rgba(86,134,178,.16); --c-escuro:#a9c7e2; --c-escuro-bg:rgba(160,190,218,.22); --c-fundo:#3a6c9a;
+  --w-1:#c9d9e8; --w-2:#9db6cd; --w-ink:#10263c;
 }
+:root[data-cor="bordo"]{--c-claro:#8f2440; --c-claro-bg:rgba(143,36,64,.12); --c-escuro:#e8607f; --c-escuro-bg:rgba(232,96,127,.2); --c-fundo:#a12a4a; --w-1:#a42d4d; --w-2:#6f1a31; --w-ink:#ffffff}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#a9c7e2; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(160,190,218,.22); --accent-txt:#a9c7e2;
+  --accent:var(--c-escuro); --accent-fill:var(--c-fundo); --accent-ink:#ffffff; --accent-bg:var(--c-escuro-bg); --accent-txt:var(--c-escuro);
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -42,7 +47,7 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
 :root[data-theme="dark"]{
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#a9c7e2; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(160,190,218,.22); --accent-txt:#a9c7e2;
+  --accent:var(--c-escuro); --accent-fill:var(--c-fundo); --accent-ink:#ffffff; --accent-bg:var(--c-escuro-bg); --accent-txt:var(--c-escuro);
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -175,8 +180,8 @@ tr:last-child td{border-bottom:0}
 .w .gr i{font-style:normal;font-family:var(--f-body);font-size:1.0625rem;font-weight:600;color:var(--muted);letter-spacing:-.01em;margin-left:4px}
 .w.vazio{min-height:0}
 .w.vazio b{margin-top:10px;font-size:1.0625rem}
-.w.tinta{background:linear-gradient(160deg,#c9d9e8,#9db6cd);color:#10263c}
-.w.tinta .k,.w.tinta p{color:rgba(16,38,60,.78)}
+.w.tinta{background:linear-gradient(160deg,var(--w-1),var(--w-2));color:var(--w-ink)}
+.w.tinta .k,.w.tinta p{color:var(--w-ink);opacity:.8}
 
 /* cronograma: semana */
 .week{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
@@ -394,7 +399,7 @@ textarea{min-height:76px;resize:vertical}
 <header>
   <div class="wrap">
     <div class="dt"><span id="hoje"></span>
-      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="topo-btn" id="tema" aria-label="Tema: automático" title="Tema">◐</button><button class="topo-btn" id="sinc" hidden aria-label="Sincronizar" title="Sincronizar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.8 8.6 4.25 4.25 0 0 1 17 18.5"/><path d="M12 12.5v7M9.5 15l2.5-2.5 2.5 2.5"/></svg></button><button class="topo-btn" id="bkp" aria-label="Backup" title="Backup"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></svg></button></div></div>
+      <div class="filter"><button class="ghost" id="instalar" hidden>Instalar</button><button class="topo-btn" id="tema" aria-label="Aparência" title="Aparência">◐</button><button class="topo-btn" id="sinc" hidden aria-label="Sincronizar" title="Sincronizar"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5a4.5 4.5 0 0 1-.7-8.95A6 6 0 0 1 17.8 8.6 4.25 4.25 0 0 1 17 18.5"/><path d="M12 12.5v7M9.5 15l2.5-2.5 2.5 2.5"/></svg></button><button class="topo-btn" id="bkp" aria-label="Backup" title="Backup"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="4.5" rx="1.2"/><path d="M5 9v9.5a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V9M10 13h4"/></svg></button></div></div>
     <h1 id="titulo">Hoje</h1>
   </div>
 </header>
@@ -2107,29 +2112,50 @@ function abrirBusca(){
   });
 }
 
-/* ---------- tema claro/escuro ---------- */
+/* ---------- aparência: tema claro/escuro e cor do app ---------- */
 // Automático segue o tema do celular ou computador. Claro e Escuro fixam a escolha neste aparelho.
+// A cor do app também fica só neste aparelho (não entra no backup nem na sincronização).
 const LS_TEMA = "meu-semestre-tema", TEMAS = [
-  ["", "automático", svgI('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor"/>')],
-  ["light", "claro", svgI('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>')],
-  ["dark", "escuro", svgI('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>')]];
-let tema = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; } catch(e){}
+  ["", "Automático", svgI('<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17A8.5 8.5 0 0 0 12 3.5z" fill="currentColor"/>')],
+  ["light", "Claro", svgI('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>')],
+  ["dark", "Escuro", svgI('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>')]];
+// [valor guardado, nome, cor da bolinha]. O azul é a cor padrão, por isso o valor dele é vazio.
+const LS_COR = "meu-semestre-cor", CORES_APP = [["", "Azul", "#7fa3c4"], ["bordo", "Bordô", "#8f2440"]];
+let tema = "", corApp = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; corApp = localStorage.getItem(LS_COR) || ""; } catch(e){}
+if (!CORES_APP.some(c => c[0] === corApp)) corApp = "";
 const corBarra = document.querySelectorAll('meta[name="theme-color"]'), corOriginal = [...corBarra].map(m => m.content);
 function aplicarTema(){
   const [valor, nome, icone] = TEMAS.find(t => t[0] === tema) || TEMAS[0];
   if (valor) document.documentElement.dataset.theme = valor;
   else if (FORA_DO_CLAUDE) delete document.documentElement.dataset.theme;
+  if (corApp) document.documentElement.dataset.cor = corApp; else delete document.documentElement.dataset.cor;
   // cor da barra do navegador e do app instalado
   corBarra.forEach((m, i) => m.content = valor ? (valor === "dark" ? "#000000" : "#f2f2f7") : corOriginal[i]);
-  const b = $("#tema"); b.innerHTML = icone; b.setAttribute("aria-label", "Tema: " + nome); b.title = "Tema: " + nome + " (toque para trocar)";
+  $("#tema").innerHTML = icone;
   return nome;
 }
-$("#tema").onclick = () => {
-  const i = TEMAS.findIndex(t => t[0] === tema);
-  tema = TEMAS[(i + 1) % TEMAS.length][0];
-  try { tema ? localStorage.setItem(LS_TEMA, tema) : localStorage.removeItem(LS_TEMA); } catch(e){}
-  toast("Tema " + aplicarTema());
-};
+function guardar(chave, valor){ try { valor ? localStorage.setItem(chave, valor) : localStorage.removeItem(chave); } catch(e){} }
+function abrirAparencia(){
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Aparência</h2>
+    <div class="field"><span class="label">Tema</span><div class="seg" id="ap_tema">${TEMAS.map(t => `<button type="button" data-v="${t[0]}">${t[1]}</button>`).join("")}</div></div>
+    <div class="field"><span class="label">Cor do app: <span id="ap_nome"></span></span><div class="swatches">${CORES_APP.map((c, i) =>
+      `<input type="radio" name="ap_cor" id="ap_cor${i}" value="${c[0]}"><label for="ap_cor${i}" style="background:${c[2]}" title="${c[1]}" aria-label="${c[1]}"></label>`).join("")}</div></div>
+    <p class="need">A escolha vale só neste aparelho. Dá para trocar quando quiser.</p>
+    <div class="actions"><span></span><div class="r"><button class="primary" type="button" id="cancel">Pronto</button></div></div>`;
+  const marcar = () => {
+    frm.querySelectorAll("#ap_tema button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === tema));
+    frm.querySelectorAll('[name="ap_cor"]').forEach(r => r.checked = r.value === corApp);
+    $("#ap_nome").textContent = (CORES_APP.find(c => c[0] === corApp) || CORES_APP[0])[1];
+  };
+  frm.querySelectorAll("#ap_tema button").forEach(b => b.onclick = () => { tema = b.dataset.v; guardar(LS_TEMA, tema); aplicarTema(); marcar(); });
+  frm.querySelectorAll('[name="ap_cor"]').forEach(r => r.onchange = () => { corApp = r.value; guardar(LS_COR, corApp); aplicarTema(); marcar(); });
+  $("#cancel").onclick = () => $("#dlg").close();
+  frm.onsubmit = e => e.preventDefault();
+  marcar();
+  $("#dlg").showModal();
+}
+$("#tema").onclick = abrirAparencia;
 aplicarTema();
 $("#sinc").onclick = botaoSinc;
 
