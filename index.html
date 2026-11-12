@@ -63,9 +63,9 @@ a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible,te
 
 /* cabeçalho: data pequena, título grande da aba e ações */
 header{padding-top:calc(env(safe-area-inset-top,0px) + 14px)}
-/* faixa atrás da hora e da bateria (app instalado no iPhone): o conteúdo rolado passa por baixo dela, não por baixo do texto */
+/* faixa sólida, da cor do fundo, atrás da hora e da bateria (app instalado no iPhone): o conteúdo rolado some por baixo dela */
 body::after{content:"";position:fixed;top:0;left:0;right:0;height:env(safe-area-inset-top,0px);z-index:30;pointer-events:none;
-  background:var(--barra, var(--bg));-webkit-backdrop-filter:saturate(180%) blur(20px);backdrop-filter:saturate(180%) blur(20px)}
+  background:var(--bg)}
 .dt{display:flex;justify-content:space-between;align-items:center;gap:12px;min-height:32px}
 /* botões redondos do topo (tema, sincronizar, buscar, backup), como os ícones da barra dos apps do iPhone */
 .dt .filter{gap:10px}
