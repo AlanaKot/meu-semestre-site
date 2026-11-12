@@ -203,6 +203,10 @@ tr:last-child td{border-bottom:0}
 .seg{display:inline-flex;background:var(--fill);border-radius:9px;padding:2px}
 .seg button{border-radius:7px;background:transparent;color:var(--fg);font-weight:500;padding:5px 16px}
 .seg button:hover{background:transparent}
+.seg button:focus-visible{outline-offset:-2px}
+.seg.cheia{display:flex}
+.seg.cheia button{flex:1;padding-left:4px;padding-right:4px}
+dialog h2:focus{outline:none}
 .seg button[aria-pressed="true"],.seg button[aria-pressed="true"]:hover{background:var(--surface);font-weight:600;box-shadow:0 3px 8px rgba(0,0,0,.12),0 1px 1px rgba(0,0,0,.04)}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .seg button[aria-pressed="true"]{background:#636366}}
 :root[data-theme="dark"] .seg button[aria-pressed="true"]{background:#636366}
@@ -2137,12 +2141,12 @@ function aplicarTema(){
 function guardar(chave, valor){ try { valor ? localStorage.setItem(chave, valor) : localStorage.removeItem(chave); } catch(e){} }
 function abrirAparencia(){
   const frm = $("#frm");
-  frm.innerHTML = `<h2>Aparência</h2>
-    <div class="field"><span class="label">Tema</span><div class="seg" id="ap_tema">${TEMAS.map(t => `<button type="button" data-v="${t[0]}">${t[1]}</button>`).join("")}</div></div>
+  frm.innerHTML = `<h2 tabindex="-1" autofocus>Aparência</h2>
+    <div class="field"><span class="label">Tema</span><div class="seg cheia" id="ap_tema">${TEMAS.map(t => `<button type="button" data-v="${t[0]}">${t[1]}</button>`).join("")}</div></div>
     <div class="field"><span class="label">Cor do app: <span id="ap_nome"></span></span><div class="swatches">${CORES_APP.map((c, i) =>
       `<input type="radio" name="ap_cor" id="ap_cor${i}" value="${c[0]}"><label for="ap_cor${i}" style="background:${c[2]}" title="${c[1]}" aria-label="${c[1]}"></label>`).join("")}</div></div>
     <p class="need">A escolha vale só neste aparelho. Dá para trocar quando quiser.</p>
-    <div class="actions"><span></span><div class="r"><button class="primary" type="button" id="cancel">Pronto</button></div></div>`;
+    <div class="actions"><div class="r" style="flex:1"><button class="primary" type="button" id="cancel" style="flex:1">Pronto</button></div></div>`;
   const marcar = () => {
     frm.querySelectorAll("#ap_tema button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === tema));
     frm.querySelectorAll('[name="ap_cor"]').forEach(r => r.checked = r.value === corApp);
