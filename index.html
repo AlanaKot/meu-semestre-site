@@ -36,9 +36,6 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
   --w-1:#c9d9e8; --w-2:#9db6cd; --w-ink:#10263c;
 }
 :root[data-cor="bordo"]{--c-claro:#8f2440; --c-claro-bg:rgba(143,36,64,.12); --c-escuro:#e8607f; --c-escuro-bg:rgba(232,96,127,.2); --c-fundo:#a12a4a; --w-1:#a42d4d; --w-2:#6f1a31; --w-ink:#ffffff}
-:root[data-cor="lilas"]{--c-claro:#65499a; --c-claro-bg:rgba(116,89,168,.14); --c-escuro:#c9b8ea; --c-escuro-bg:rgba(190,170,230,.22); --c-fundo:#7459a8; --w-1:#ddd3ee; --w-2:#bcaadb; --w-ink:#2a1c4a}
-:root[data-cor="verde"]{--c-claro:#2a6645; --c-claro-bg:rgba(58,122,86,.14); --c-escuro:#a5d6b7; --c-escuro-bg:rgba(150,205,170,.2); --c-fundo:#347450; --w-1:#cfe5d6; --w-2:#a5c9b3; --w-ink:#12301f}
-:root[data-cor="rosa"]{--c-claro:#a83264; --c-claro-bg:rgba(184,69,122,.13); --c-escuro:#f2a7c3; --c-escuro-bg:rgba(240,160,190,.2); --c-fundo:#b03a6b; --w-1:#f6d5e2; --w-2:#eab0c8; --w-ink:#4a1230}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
@@ -2123,7 +2120,7 @@ const LS_TEMA = "meu-semestre-tema", TEMAS = [
   ["light", "Claro", svgI('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/>')],
   ["dark", "Escuro", svgI('<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/>')]];
 // [valor guardado, nome, cor da bolinha]. O azul é a cor padrão, por isso o valor dele é vazio.
-const LS_COR = "meu-semestre-cor", CORES_APP = [["", "Azul", "#7fa3c4"], ["bordo", "Bordô", "#8f2440"], ["lilas", "Lilás", "#9b85cc"], ["verde", "Verde", "#5c9c78"], ["rosa", "Rosa", "#d9719c"]];
+const LS_COR = "meu-semestre-cor", CORES_APP = [["", "Azul", "#7fa3c4"], ["bordo", "Bordô", "#8f2440"]];
 let tema = "", corApp = ""; try { tema = localStorage.getItem(LS_TEMA) || ""; corApp = localStorage.getItem(LS_COR) || ""; } catch(e){}
 if (!CORES_APP.some(c => c[0] === corApp)) corApp = "";
 const corBarra = document.querySelectorAll('meta[name="theme-color"]'), corOriginal = [...corBarra].map(m => m.content);
