@@ -14,7 +14,7 @@ Fora do claude.ai, os dados ficam salvos no navegador do aparelho em que você u
 
 ## Backup
 
-No topo do site, o botão **Backup** baixa um arquivo `.json` com todos os dados. O mesmo botão importa o arquivo de volta.
+No topo do site, o botão redondo com uma **caixa** abre o Backup. Ali dá para baixar um arquivo `.json` com todos os dados e importar o arquivo de volta.
 
 Use o backup para:
 
@@ -37,11 +37,11 @@ Os nomes dos menus do Google podem mudar um pouco.
 
 ### Ligar em cada aparelho
 
-1. No site, toque em **Sincronizar**, no topo.
+1. No site, toque no botão redondo com uma **nuvem**, no topo.
 2. Cole o ID do cliente e toque em **Conectar com o Google**.
 3. Escolha sua conta. O Google pode avisar que o app não foi verificado: como o app é seu, toque em **Continuar**.
 
-Os dados dos aparelhos se juntam, nada é apagado. Depois de cerca de uma hora sem uso, o Google pede para entrar de novo: o topo mostra "Toque em Sincronizar". Para desligar: **Backup → Sincronização… → Desligar neste aparelho**.
+Os dados dos aparelhos se juntam, nada é apagado. Depois de cerca de uma hora sem uso, o Google pede para entrar de novo: o fim da página mostra "Toque na nuvem, no topo, para sincronizar". Para desligar: botão da **caixa** (Backup) → **Sincronização com o Google Drive** → **Desligar neste aparelho**.
 
 ## Usar como aplicativo
 
