@@ -135,6 +135,16 @@ button.danger{color:var(--bad)}
 .row .grow{flex:1;min-width:0}
 .row .t{font-size:1.0625rem;letter-spacing:-.02em;overflow-wrap:anywhere}
 .row .m{color:var(--muted);font-size:.84rem;overflow-wrap:anywhere}
+.row[data-edit],.row:has(>button[data-edit]){cursor:pointer}
+.row:not(.tarefa)>button.ghost[data-edit]{font-size:0;min-width:28px;padding-inline:8px 2px;color:var(--ink)}
+.row:not(.tarefa)>button.ghost[data-edit]::after{content:"";display:inline-block;width:8px;height:8px;border-top:2px solid;border-right:2px solid;transform:rotate(45deg);opacity:.7}
+.row:has(>.pn){--rec:42px}
+.pn{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;flex:none;background:var(--fill);color:var(--muted);font:700 .94rem var(--f-num)}
+.pn.ok{background:var(--accent-fill);color:var(--accent-ink)}
+.list:has(>.tarefa){overflow:hidden}
+.tarefa.desl{background:var(--surface)}
+.tarefa.desl::after{content:"Apagar";position:absolute;left:100%;top:0;bottom:0;width:200px;display:flex;align-items:center;padding-left:18px;background:#d1362b;color:#fff;font-weight:600}
+.toast button{min-height:0!important;padding:0 0 0 12px!important;font-weight:600;background:none}
 .cb{width:4px;align-self:stretch;min-height:34px;border-radius:2px;flex:none}
 .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;flex:none}
 .ic svg{width:18px;height:18px;stroke-width:2.2}
@@ -362,6 +372,7 @@ textarea{min-height:76px;resize:vertical}
 }
 @media (prefers-reduced-motion:no-preference){
   button,nav a{transition:background-color .15s,opacity .15s}
+  .tarefa{transition:transform .25s var(--mola)}
   dialog[open]{animation:sobe .4s var(--mola)}
   dialog[open]::backdrop{animation:some .25s ease-out}
   @media (max-width:700px){dialog[open]{animation-name:folha}}
@@ -423,7 +434,10 @@ const mat = id => S.materias.find(m => m.id === id);
 const corDe = id => mat(id)?.cor || "#6b7a8f";
 const nomeDe = id => mat(id)?.nome || "Sem matéria";
 const uid = () => Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-function toast(msg){ const t=$("#toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true,2200); }
+// aviso rápido no pé da tela; "acao" é um botão opcional, como Desfazer
+function toast(msg, acao, fn){ const t=$("#toast"); t.textContent=msg;
+  if (acao){ const b=document.createElement("button"); b.className="ghost"; b.textContent=acao; b.onclick=()=>{ t.hidden=true; fn(); }; t.append(b); }
+  t.hidden=false; clearTimeout(toast.h); toast.h=setTimeout(()=>t.hidden=true, acao ? 5000 : 2200); }
 
 /* ---------- armazenamento ---------- */
 function loadLocal(){
@@ -843,14 +857,30 @@ function abrirPlano(){
   $("#dlg").showModal();
 }
 
+// guia de quem está começando: aparece no Painel até existir matéria e grade
+function primeirosPassos(){
+  const passos = [
+    ["Cadastre suas matérias", "Nome, professor e total de aulas de cada uma.", S.materias.length > 0, '<button class="primary" data-novo="materias">+ Matéria</button>'],
+    ["Monte a grade da semana", "Os horários das aulas e dos seus estudos.", S.cronograma.length > 0, '<button class="primary" data-novo="cronograma">+ Aula</button>'],
+    ["Anote a primeira prova ou trabalho", "O site conta os dias e calcula a média.", S.provas.length > 0, '<button class="primary" data-novo="provas">+ Prova</button>'],
+  ];
+  if (passos[0][2] && passos[1][2]) return "";
+  const atual = passos.findIndex(p => !p[2]);
+  return `<section class="panel" style="margin-bottom:26px">
+    <div class="bar" style="margin-bottom:8px"><h3>Primeiros passos</h3>${S.materias.length ? "" : '<button class="ghost" data-acao="backup">Já tenho backup</button>'}</div>
+    <div class="list">${passos.map((p, i) => `<div class="row"><span class="pn ${p[2] ? "ok" : ""}">${p[2] ? ICO.prova : i + 1}</span>
+      <div class="grow"><div class="t">${p[0]}</div><div class="m">${p[1]}</div></div>${i === atual ? p[3] : ""}</div>`).join("")}</div>
+  </section>`;
+}
+
 function vPainel(){
   const hoje = new Date().getDay();
   const folgaHoje = semAula(hojeISO());
   const blocos = S.cronograma.filter(b => +b.dia === hoje && !(folgaHoje && b.tipo === "aula")).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
   const proximas = [
-    ...S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null).map(p => ({ data:p.data, t:esc(p.titulo)+exTag(p),
+    ...S.provas.filter(p => p.data && diasAte(p.data) >= 0 && num(p.nota) == null).map(p => ({ data:p.data, t:esc(p.titulo)+exTag(p), col:"provas", id:p.id,
       tipo: p.tipo === "prova" ? "prova" : "entrega", cor:corDe(p.materiaId), sub:`${esc(nomeDe(p.materiaId))} · ${fmtData(p.data)}` })),
-    ...S.eventos.filter(e => e.data && diasAte(e.dataFim || e.data) >= 0).map(e => ({ data:e.data, t:esc(e.titulo)+exTag(e), tipo:"evento", cor:"#8e8e93", sub:`Evento · ${periodo(e)}` })),
+    ...S.eventos.filter(e => e.data && diasAte(e.dataFim || e.data) >= 0).map(e => ({ data:e.data, t:esc(e.titulo)+exTag(e), col:"eventos", id:e.id, tipo:"evento", cor:"#8e8e93", sub:`Evento · ${periodo(e)}` })),
   ].sort((a,b) => a.data.localeCompare(b.data)).slice(0,6);
   // widgets do topo: o que vem agora e o compromisso mais perto
   const agora = new Date().toTimeString().slice(0,5);
@@ -877,12 +907,13 @@ function vPainel(){
   }).join("");
 
   return `${avisoExemplo()}
+  ${primeirosPassos()}
   ${widgets}
   <div class="grid2">
     <section class="panel">
       <div class="bar" style="margin-bottom:8px"><h3>${DIAS[hoje]}${folgaHoje ? ` <span class="chip folga">sem aula · ${esc(folgaHoje)}</span>` : ""}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
       ${blocos.length ? `<div class="list">${blocos.map(b => `
-        <div class="row"><span class="cb" style="background:${esc(corDe(b.materiaId))}"></span>
+        <div class="row" data-edit="cronograma" data-id="${b.id}"><span class="cb" style="background:${esc(corDe(b.materiaId))}"></span>
           <div class="grow"><div class="t">${esc(nomeDe(b.materiaId))}${exTag(b)}</div><div class="m">${esc(b.topico||rotTipo(b.tipo))}</div></div>
           <span class="hr">${esc(b.inicio||"")}<br>${esc(b.fim||"")}</span></div>`).join("")}</div>`
         : `<p class="empty">Nada marcado para hoje. Use o Cronograma para montar sua semana.</p>`}
@@ -890,7 +921,7 @@ function vPainel(){
     <section class="panel">
       <div class="bar" style="margin-bottom:8px"><h3>Próximos</h3><div class="filter">${FORA_DO_CLAUDE ? '<button class="ghost" data-acao="lembretes">Lembretes</button>' : ""}<button class="ghost" data-novo="provas">+ Prova</button></div></div>
       ${proximas.length ? `<div class="list">${proximas.map(p => { const real = diasAte(p.data), d = Math.max(0, real); return `
-        <div class="row"><span class="ic" style="background:${esc(p.cor)}">${ICO[p.tipo]}</span>
+        <div class="row" data-edit="${p.col}" data-id="${p.id}"><span class="ic" style="background:${esc(p.cor)}">${ICO[p.tipo]}</span>
           <div class="grow"><div class="t">${p.t}</div><div class="m">${p.sub}</div></div>
           <span class="dd ${real < 0 ? "sem" : classePrazo(p.data)}">${real < 0 ? "agora" : d === 0 ? "hoje" : d === 1 ? "amanhã" : d + " dias"}</span></div>`; }).join("")}</div>`
         : `<p class="empty">Nenhuma prova, entrega ou evento à frente.</p>`}
@@ -1926,7 +1957,12 @@ function render(){
 }
 
 $("#view").addEventListener("click", async e => {
-  const b = e.target.closest("button"); if (!b) return;
+  let b = e.target.closest("button");
+  if (!b){ // toque em qualquer ponto da linha abre a edição (menos em link, caixinha e campo)
+    if (e.target.closest("a,input,label,select,summary")) return;
+    const r = e.target.closest(".row"); b = r && (r.dataset.edit ? r : r.querySelector(":scope > button[data-edit]"));
+    if (!b) return;
+  }
   if (b.dataset.novo) abrirForm(b.dataset.novo, null, { ...(b.dataset.mat ? {materiaId:b.dataset.mat} : {}), ...(b.dataset.dia!=null ? {dia:b.dataset.dia} : {}), ...(b.dataset.data ? {data:b.dataset.data} : {}) });
   else if (b.dataset.vis){ visCron = b.dataset.vis; try { localStorage.setItem("meu-semestre-vis", visCron); } catch(e){} render(); }
   else if (b.dataset.mes){ const n = +b.dataset.mes, h = new Date(); mesRef = n ? new Date(mesRef.getFullYear(), mesRef.getMonth()+n, 1) : new Date(h.getFullYear(), h.getMonth(), 1); render(); }
@@ -1951,6 +1987,31 @@ $("#view").addEventListener("click", async e => {
     toast("Exemplos apagados");
   }
 });
+// deslizar uma tarefa para a esquerda apaga; o aviso oferece Desfazer
+let desl = null;
+$("#view").addEventListener("touchstart", e => {
+  const r = e.target.closest(".tarefa"); desl = null;
+  if (r && e.touches.length === 1) desl = { r, x:e.touches[0].clientX, y:e.touches[0].clientY, dx:0, lado:null };
+}, { passive:true });
+$("#view").addEventListener("touchmove", e => {
+  if (!desl) return;
+  const dx = e.touches[0].clientX - desl.x, dy = e.touches[0].clientY - desl.y;
+  if (desl.lado == null && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) desl.lado = Math.abs(dx) > Math.abs(dy) && dx < 0;
+  if (!desl.lado) return;
+  desl.dx = Math.max(dx, -160); desl.r.classList.add("desl");
+  desl.r.style.transition = "none"; desl.r.style.transform = `translateX(${Math.min(0, desl.dx)}px)`;
+}, { passive:true });
+const fimDesl = async () => {
+  const d = desl; desl = null; if (!d || !d.lado) return;
+  d.r.style.transition = ""; d.r.style.transform = "";
+  if (d.dx > -90){ setTimeout(() => d.r.classList.remove("desl"), 250); return; }
+  const t = S.tarefas.find(x => x.id === d.r.querySelector("[data-tarefa]")?.dataset.tarefa); if (!t) return;
+  const { id:_, _t, ...resto } = t;
+  await apagar("tarefas", t.id);
+  toast("Tarefa apagada", "Desfazer", () => salvar("tarefas", null, resto));
+};
+$("#view").addEventListener("touchend", fimDesl);
+$("#view").addEventListener("touchcancel", fimDesl);
 $("#view").addEventListener("change", e => {
   if (e.target.id==="fProva"){ filtroProvas = e.target.value; render(); }
   else if (e.target.dataset.tarefa) marcarTarefa(e.target.dataset.tarefa, e.target.checked);
