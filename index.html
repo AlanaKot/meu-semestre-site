@@ -267,7 +267,9 @@ input[type=date],input[type=time]{-webkit-appearance:none;appearance:none;displa
 input::-webkit-date-and-time-value{text-align:left;margin:0;min-height:1.4em}
 .duo>*{min-width:0}
 textarea{min-height:76px;resize:vertical}
-.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start}
+/* em dois campos lado a lado, o nome fica numa linha só, para os campos não ficarem tortos */
+.duo label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .swatches{display:flex;gap:10px;flex-wrap:wrap}
 .swatches label{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid transparent;display:block;padding:0}
 .swatches input{position:absolute;opacity:0;width:1px;height:1px}
@@ -1439,7 +1441,7 @@ const FORMS = {
     {k:"materiaId",l:"Matéria",t:"select",opts:optMaterias},
     {k:"titulo",l:"Título",t:"text",req:1,ph:"Ex.: P1, Trabalho final"},
     {duo:[{k:"tipo",l:"Tipo",t:"select",opts:[["prova","Prova"],["trabalho","Trabalho"],["lista","Lista"],["seminario","Seminário"]]},{k:"data",l:"Data",t:"date"}]},
-    {duo:[{k:"nota",l:"Nota (vazio se ainda não saiu)",t:"num"},{k:"notaMax",l:"Vale",t:"num",def:"10"}]},
+    {duo:[{k:"nota",l:"Nota",t:"num",ph:"ainda não saiu"},{k:"notaMax",l:"Vale",t:"num",def:"10"}]},
     {k:"peso",l:"Peso na média",t:"num",def:"1"},
     {k:"conteudo",l:"Conteúdo",t:"area"} ]},
 };
@@ -1477,7 +1479,10 @@ document.addEventListener("input", e => {
 });
 
 function campoHTML(c, v){
-  const id = "f_"+c.k, val = v ?? (typeof c.def==="function"?c.def():c.def) ?? "";
+  const id = "f_"+c.k;
+  let val = v ?? (typeof c.def==="function"?c.def():c.def) ?? "";
+  // números aparecem com vírgula, como se escreve em português (7,5 e não 7.5)
+  if (c.t==="num" && typeof val==="number") val = String(val).replace(".", ",");
   if (c.t==="select"){ const o = typeof c.opts==="function"?c.opts():c.opts;
     return `<div class="field"><label for="${id}">${c.l}</label><select id="${id}" name="${c.k}">${o.map(([a,b])=>`<option value="${esc(a)}" ${String(val)===String(a)?"selected":""}>${esc(b)}</option>`).join("")}</select>${c.hint?`<span class="need">${c.hint}</span>`:""}</div>`; }
   if (c.t==="check") return `<div class="field check"><input type="checkbox" id="${id}" name="${c.k}" ${val?"checked":""}><label for="${id}">${c.l}</label></div>`;
