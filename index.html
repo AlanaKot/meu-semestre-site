@@ -17,11 +17,11 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
 </script>
 <style>
 /* Visual no padrão dos apps do iPhone: título grande, listas agrupadas em quadros sobre fundo cinza,
-   barra de abas embaixo no celular (pílula flutuante no topo em telas largas) e o bordô como cor do app. */
+   barra de abas embaixo no celular (pílula flutuante no topo em telas largas) e o azul do iPhone 14 como cor do app. */
 :root{
   --bg:#f2f2f7; --surface:#ffffff; --surface-2:#e9e9ee; --line:rgba(60,60,67,.2);
   --fg:#000000; --muted:#6c6c70; --ink:#8e8e93;
-  --accent:#8f2440; --accent-fill:#8f2440; --accent-ink:#ffffff; --accent-bg:rgba(143,36,64,.12); --accent-txt:#8f2440;
+  --accent:#2d5f8b; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(86,134,178,.16); --accent-txt:#2d5f8b;
   --fill:rgba(118,118,128,.12); --fill-2:rgba(118,118,128,.24);
   --barra:rgba(249,249,249,.82); --folha:#f2f2f7; --campo:#ffffff;
   --ok:#1a7f3c; --warn:#946200; --bad:#c9281e;
@@ -34,7 +34,7 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2); --accent-txt:#e8607f;
+  --accent:#a9c7e2; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(160,190,218,.22); --accent-txt:#a9c7e2;
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -42,7 +42,7 @@ try { const t = localStorage.getItem("meu-semestre-tema"); if (t === "light" || 
 :root[data-theme="dark"]{
   --bg:#000000; --surface:#1c1c1e; --surface-2:#2c2c2e; --line:rgba(84,84,88,.6);
   --fg:#ffffff; --muted:#98989f; --ink:#8e8e93;
-  --accent:#e8607f; --accent-fill:#b12e4d; --accent-ink:#ffffff; --accent-bg:rgba(232,96,127,.2); --accent-txt:#e8607f;
+  --accent:#a9c7e2; --accent-fill:#3a6c9a; --accent-ink:#ffffff; --accent-bg:rgba(160,190,218,.22); --accent-txt:#a9c7e2;
   --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.36);
   --barra:rgba(22,22,24,.8); --folha:#1c1c1e; --campo:#2c2c2e;
   --ok:#30d158; --warn:#ffb340; --bad:#ff6961;
@@ -165,8 +165,8 @@ tr:last-child td{border-bottom:0}
 .w .gr i{font-style:normal;font-family:var(--f-body);font-size:1.0625rem;font-weight:600;color:var(--muted);letter-spacing:-.01em;margin-left:4px}
 .w.vazio{min-height:0}
 .w.vazio b{margin-top:10px;font-size:1.0625rem}
-.w.tinta{background:linear-gradient(160deg,#a42d4d,#6f1a31);color:#fff}
-.w.tinta .k,.w.tinta p{color:rgba(255,255,255,.82)}
+.w.tinta{background:linear-gradient(160deg,#c9d9e8,#9db6cd);color:#10263c}
+.w.tinta .k,.w.tinta p{color:rgba(16,38,60,.78)}
 
 /* cronograma: semana */
 .week{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
