@@ -1023,14 +1023,19 @@ function vProvas(){
       ${n!=null?`<span class="big">${fmt(n)}<span class="need">/${fmt(mx)}</span></span>`:(p.data&&diasAte(p.data)<0?'<span class="chip warn">lançar nota</span>':"")}
       <button class="ghost" data-edit="provas" data-id="${p.id}">Editar</button></div>`; };
   const cards = S.materias.filter(m => !filtroProvas || m.id === filtroProvas).map(m => { const r = resumoNotas(m.id);
-    return `<div class="stat"><div class="label">${esc(m.nome)}</div><div>${chipMedia(r.media)} ${r.precisa!=null&&r.n&&r.precisa>0&&r.precisa<=10?`<span class="need">precisa de ${fmt(r.precisa)}</span>`:`<span class="need">${textoExame(r)}</span>`}</div></div>`; }).join("");
+    // uma linha por matéria: nome e o que falta embaixo, média à direita
+    const sub = !r.n ? "nenhuma avaliação cadastrada"
+      : r.precisa != null ? (r.precisa > 10 ? "média fora de alcance" : r.precisa <= 0 ? "média já garantida" : `precisa de <b class="num">${fmt(r.precisa)}</b> no que falta`)
+      : textoExame(r) || (r.media >= S.config.mediaMin ? "aprovada por nota" : "");
+    return `<div class="row"><span class="dot" style="background:${esc(m.cor)}"></span>
+      <div class="grow"><div class="t">${esc(m.nome)}</div>${sub ? `<div class="m">${sub}</div>` : ""}</div>${chipMedia(r.media)}</div>`; }).join("");
   return `${avisoExemplo()}
   <div class="bar">
     <div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select>
     ${botaoAgenda()}
     <button data-acao="simular">Simular nota</button>
     <button class="primary" data-novo="provas">+ Prova ou trabalho</button></div></div>
-  ${cards?`<div class="panel stats" style="margin-bottom:26px">${cards}</div>`:""}
+  ${cards?`<section class="panel" style="margin-bottom:26px"><h3>Médias</h3><div class="list">${cards}</div></section>`:""}
   <div class="grid2">
     <section class="panel"><h3>A fazer / sem nota</h3>${futuras.length?`<div class="list">${futuras.map(linha).join("")}</div>`:'<p class="empty">Nada pendente.</p>'}</section>
     <section class="panel"><h3>Com nota</h3>${feitas.length?`<div class="list">${feitas.map(linha).join("")}</div>`:'<p class="empty">Quando lançar uma nota, ela aparece aqui.</p>'}</section>
