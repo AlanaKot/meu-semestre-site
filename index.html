@@ -126,6 +126,7 @@ button.danger{color:var(--bad)}
 
 .notice{background:var(--surface);border-radius:var(--r);padding:12px 12px 12px 16px;color:var(--muted);font-size:.87rem;margin-bottom:16px;display:flex;gap:12px;align-items:center;justify-content:space-between}
 .notice button{flex:none}
+.notice a{flex:none;font-weight:600;color:var(--accent);text-decoration:none}
 .empty{color:var(--muted);font-size:.94rem;padding:8px 0}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none}
 .list{display:flex;flex-direction:column}
@@ -944,6 +945,7 @@ function vPainel(){
   return `${avisoExemplo()}
   ${primeirosPassos()}
   ${widgets}
+  ${(() => { const l = lembreteHoras(); return l && l.dias <= 30 ? `<div class="notice"><span>Horas complementares: o prazo ${quandoHoras(l.dias)} e faltam anexar ${nHoras(l.h)} h.</span><a href="#horas">Ver horas</a></div>` : ""; })()}
   <div class="grid2">
     <section class="panel">
       <div class="bar" style="margin-bottom:8px"><h3>${DIAS[hoje]}${folgaHoje ? ` <span class="chip folga">sem aula · ${esc(folgaHoje)}</span>` : ""}</h3><div class="filter"><button data-acao="faltei">Faltei hoje</button><button class="ghost" data-novo="cronograma" data-dia="${hoje}">+ Bloco</button></div></div>
@@ -1919,6 +1921,7 @@ function vencendo(){
   return [
     ...S.provas.filter(p => p.data && num(p.nota) == null && perto(diasAte(p.data))).map(p => `${p.titulo} (${nomeDe(p.materiaId)}) ${quando(diasAte(p.data))}`),
     ...S.eventos.filter(e => e.data && perto(diasAte(e.data))).map(e => `${e.titulo} ${quando(diasAte(e.data))}`),
+    ...(() => { const l = lembreteHoras(); return l && (perto(l.dias) || l.dias === 7) ? [`Horas complementares: prazo ${quandoHoras(l.dias).replace("vence ", "")} (faltam ${nHoras(l.h)} h)`] : []; })(),
     ...S.tarefas.filter(t => !t.feita && t.data && (perto(diasAte(t.data)) || diasAte(t.data) < 0)).map(t => `Tarefa: ${t.titulo} ${diasAte(t.data) < 0 ? "atrasada" : quando(diasAte(t.data))}`),
   ];
 }
@@ -1995,6 +1998,13 @@ function arq(modo, id, arquivo){
 }
 const textoArquivos = () => PODE_SINC && sinc.conectado ? "Os arquivos também vão para o seu Google Drive."
   : "Os arquivos ficam só neste aparelho." + (PODE_SINC ? " Ligue a sincronização com o Google Drive para guardar uma cópia lá." : "");
+// Prazo para entregar as horas (opcional, definido em Metas e limites). Devolve null se não há o que lembrar.
+function lembreteHoras(){
+  const prazo = S.config.horasPrazo; if (!prazo) return null;
+  const pend = S.horas.filter(x => !x.anexada); if (!pend.length) return null;
+  return { dias: diasAte(prazo), h: somaHoras(pend), n: pend.length, prazo };
+}
+const quandoHoras = d => d < 0 ? `venceu há ${-d} ${d === -1 ? "dia" : "dias"}` : d === 0 ? "vence hoje" : d === 1 ? "vence amanhã" : `vence em ${d} dias`;
 const nHoras = h => fmt(h, h % 1 ? 1 : 0);
 const somaHoras = l => l.reduce((t, x) => t + (num(x.horas) || 0), 0);
 function linhaHora(x){
@@ -2017,7 +2027,8 @@ function vHoras(){
   const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas contam` : "horas já anexadas contam"}</span></div>
     ${meta ? `<div class="meter"><i style="width:${pct}%;background:var(--ok)"></i></div>` : ""}
     <p class="need" style="margin:6px 0 0">${pend.length ? `Falta anexar ${nHoras(somaHoras(pend))} h (${pend.length} ${pend.length > 1 ? "atividades" : "atividade"}). Total registrado: ${nHoras(total)} h.` : l.length ? "Tudo o que você registrou já foi anexado." : "Registre as atividades e guarde o certificado de cada uma."}
-    ${meta ? "" : " Para ver o progresso, informe a meta em Metas e limites."}</p></div>`;
+    ${meta ? "" : " Para ver o progresso, informe a meta em Metas e limites."}
+    ${S.config.horasPrazo ? `<br>Prazo de entrega: ${fmtData(S.config.horasPrazo)}${pend.length ? " (" + quandoHoras(diasAte(S.config.horasPrazo)) + ")" : ""}.` : ""}</p></div>`;
   const linhaCat = c => { const sobra = c.lim && c.t > c.lim;
     return `<div class="row"><div class="grow"><div class="t">${esc(c.n)}</div><div class="m">${nHoras(c.a)} h anexadas${c.lim ? ` · limite ${nHoras(c.lim)} h` : ""}${sobra ? ` · você registrou ${nHoras(c.t)} h, só ${nHoras(c.lim)} contam` : ""}</div></div>
       <span class="chip ${sobra || (c.lim && c.conta >= c.lim) ? "warn" : c.conta ? "ok" : ""} num">${nHoras(c.conta)}${c.lim ? " / " + nHoras(c.lim) : ""} h</span></div>`; };
@@ -2032,6 +2043,8 @@ function abrirLimitesHoras(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Metas e limites</h2>
     <div class="field"><label for="l_meta">Total de horas exigidas</label><input id="l_meta" inputmode="decimal" value="${v(S.config.horasMeta)}"><span class="need">0 esconde a barra de progresso.</span></div>
+    ${campoData("l_prazo", "", "Prazo para entregar as horas (opcional)", S.config.horasPrazo)}
+    <span class="need" style="margin-top:-8px">O Hoje avisa quando faltar menos de 30 dias e ainda houver horas a anexar.</span>
     <h3 style="margin-top:6px">Limite por categoria</h3>
     <p class="need">Muitas faculdades só contam um máximo de horas por tipo. Use 0 se não há limite.</p>
     ${CAT_HORAS.map(([k, n]) => `<div class="field"><label for="l_${k}">${n} (horas)</label><input id="l_${k}" inputmode="decimal" value="${v(lims[k])}"></div>`).join("")}
@@ -2040,10 +2053,12 @@ function abrirLimitesHoras(){
   frm.onsubmit = async e => { e.preventDefault();
     const horasMeta = num($("#l_meta").value), horasLimites = {};
     if (horasMeta == null || horasMeta < 0){ mostrarErro("l_meta", "Use um número de horas (0 ou mais)."); return; }
+    const horasPrazo = brParaIso($("#l_prazo").value);
+    if (horasPrazo == null){ mostrarErro("l_prazo", "Data inválida. Use dd/mm/aaaa, por exemplo 05/03/2026."); return; }
     for (const [k, n] of CAT_HORAS){ const h = num($("#l_" + k).value);
       if (h == null || h < 0){ mostrarErro("l_" + k, n + ": use um número de horas (0 ou mais)."); return; }
       horasLimites[k] = h; }
-    await salvarConfig({ ...S.config, horasMeta, horasLimites });
+    await salvarConfig({ ...S.config, horasMeta, horasLimites, horasPrazo });
     $("#dlg").close(); toast("Salvo"); };
   $("#cancel").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
@@ -2072,7 +2087,9 @@ function abrirHora(id){
     <div class="field"><span class="label" style="text-transform:none;letter-spacing:0;font-size:.82rem">Certificado (PDF ou foto)</span>
       <span class="need" id="hArqNome"></span>
       <input type="file" id="hArq" class="sr" accept="application/pdf,image/*">
+      <input type="file" id="hCam" class="sr" accept="image/*" capture="environment">
       <label for="hArq" class="arquivo" id="hArqBtn">Escolher arquivo…</label>
+      <label for="hCam" class="arquivo" id="hCamBtn" style="margin-top:8px">Tirar foto do certificado</label>
       <button type="button" class="ghost" id="hArqTirar" hidden>Remover arquivo</button>
       <span class="need">Até 15 MB. ${textoArquivos()}</span></div>
     <p class="erro" id="erro" role="alert" hidden></p>
@@ -2085,6 +2102,9 @@ function abrirHora(id){
   };
   atualiza();
   $("#hArq").onchange = () => { tirar = false; atualiza(); };
+  // foto tirada na hora vai para o mesmo campo do arquivo
+  $("#hCam").onchange = () => { const f = $("#hCam").files[0]; if (!f) return;
+    const dt = new DataTransfer(); dt.items.add(new File([f], "certificado-" + hojeISO() + "." + (f.type.split("/")[1] || "jpg").replace("jpeg", "jpg"), { type: f.type })); $("#hArq").files = dt.files; tirar = false; atualiza(); };
   $("#hArqTirar").onclick = () => { $("#hArq").value = ""; tirar = true; atualiza(); };
   frm.onsubmit = async e => {
     e.preventDefault();
