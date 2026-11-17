@@ -401,6 +401,7 @@ textarea{min-height:76px;resize:vertical}
   <a href="#provas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="m10 15 2 2 4-4"/></svg>Provas<span class="lg"> e notas</span></a>
   <a href="#faltas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="8" r="3.5"/><path d="M3.5 20c.6-3.6 3.2-5.5 6.5-5.5 1.2 0 2.3.25 3.2.7"/><path d="m16 15 5 5m0-5-5 5"/></svg>Faltas</a>
   <a href="#materias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/></svg>Matérias</a>
+  <a href="#horas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>Horas</a>
 </nav>
 <header>
   <div class="wrap">
@@ -421,12 +422,12 @@ textarea{min-height:76px;resize:vertical}
 const DIAS = ["Domingo","Segunda","Terça","Quarta","Quinta","Sexta","Sábado"];
 const DIAS_CURTO = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 const CORES = ["#3b6fd8","#d9534f","#2e9e6a","#c58a12","#8a55c9","#d0679d","#1f9bb0","#6b7a8f"];
-const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas","sessoes","anotacoes"];
+const COLS = ["materias","cronograma","faltas","provas","eventos","tarefas","sessoes","anotacoes","horas"];
 const LS_KEY = "meu-semestre-v1";
 const LS_BACKUP = "meu-semestre-backup-em";
 const FORA_DO_CLAUDE = !window.claude; // site próprio ou arquivo aberto no navegador
 
-const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], sessoes:[], anotacoes:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
+const S = { materias:[], cronograma:[], faltas:[], provas:[], eventos:[], tarefas:[], sessoes:[], anotacoes:[], horas:[], config:{ mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0 } };
 let db = null, mode = "carregando";
 
 /* ---------- utilidades ---------- */
@@ -1622,6 +1623,7 @@ function abrirConfig(){
   frm.innerHTML = `<h2>Critérios de aprovação</h2>
     <div class="field"><label for="c_media">Média mínima para aprovação (0 a 10)</label><input id="c_media" inputmode="decimal" value="${esc(fmt(S.config.mediaMin))}"></div>
     <div class="field"><label for="c_freq">Frequência mínima (%)</label><input id="c_freq" inputmode="numeric" value="${esc(S.config.freqMin)}"><span class="need">Com 75%, pode faltar até 25% das aulas.</span></div>
+    <div class="field"><label for="c_horas">Horas complementares exigidas (0 = não mostrar meta)</label><input id="c_horas" inputmode="decimal" value="${esc(nHoras(num(S.config.horasMeta) || 0))}"></div>
     <h3 style="margin-top:6px">Exame final</h3>
     <p class="need">Média final = (média do semestre + nota do exame) ÷ 2.</p>
     <div class="field"><label for="c_exame">Média final mínima depois do exame (0 a 10)</label><input id="c_exame" inputmode="decimal" value="${esc(fmt(num(S.config.exameMedia) ?? 5))}"></div>
@@ -1635,7 +1637,9 @@ function abrirConfig(){
     const exameMedia = num($("#c_exame").value), exameDireito = num($("#c_direito").value);
     if (exameMedia == null || exameMedia < 0 || exameMedia > 10){ mostrarErro("c_exame", "A média final do exame precisa ficar entre 0 e 10."); return; }
     if (exameDireito == null || exameDireito < 0 || exameDireito > 10){ mostrarErro("c_direito", "A média para ter direito ao exame precisa ficar entre 0 e 10."); return; }
-    await salvarConfig({ ...S.config, mediaMin, freqMin, exameMedia, exameDireito });
+    const horasMeta = num($("#c_horas").value);
+    if (horasMeta == null || horasMeta < 0){ mostrarErro("c_horas", "Use um número de horas (0 ou mais)."); return; }
+    await salvarConfig({ ...S.config, mediaMin, freqMin, exameMedia, exameDireito, horasMeta });
     $("#dlg").close(); toast("Salvo"); };
   $("#cancel").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
@@ -1824,7 +1828,7 @@ function abrirNovoSemestre(){
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
-    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas, anotações e tempo de estudo. Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
+    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas, anotações, tempo de estudo e a lista de horas complementares (os arquivos dos certificados não vão no backup). Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label>
       <input type="file" id="bkFile" class="sr" accept=".json,application/json">
@@ -1945,9 +1949,119 @@ function exportarAgenda(){
   toast(`${n} ${n>1?"eventos":"evento"} no arquivo. Abra para adicionar à agenda.`);
 }
 
+/* ---------- horas complementares ---------- */
+// Cada atividade vira um item em S.horas (título, horas, categoria, data, se já foi anexada).
+// O arquivo do certificado fica no IndexedDB do navegador (um "armário" para arquivos grandes,
+// que o localStorage não aguenta). Por isso o arquivo fica só neste aparelho: não vai no backup
+// nem na sincronização com o Drive. Só os dados da atividade vão.
+const CAT_HORAS = [["ensino","Ensino"],["pesquisa","Pesquisa"],["extensao","Extensão"],["cultura","Cultura e eventos"],["outras","Outras"]];
+const rotCat = c => (CAT_HORAS.find(x => x[0] === c) || [0, "Outras"])[1];
+const MAX_ARQ = 15 * 1024 * 1024;
+function arq(modo, id, arquivo){
+  return new Promise((ok, no) => {
+    if (!window.indexedDB){ no(new Error("sem indexedDB")); return; }
+    const r = indexedDB.open("meu-semestre-arquivos", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("arq");
+    r.onerror = () => no(r.error);
+    r.onsuccess = () => {
+      const d = r.result, t = d.transaction("arq", modo === "get" ? "readonly" : "readwrite"), st = t.objectStore("arq");
+      const q = modo === "put" ? st.put(arquivo, id) : modo === "del" ? st.delete(id) : st.get(id);
+      t.oncomplete = () => { d.close(); ok(q.result); };
+      t.onerror = t.onabort = () => { d.close(); no(t.error); };
+    };
+  });
+}
+const nHoras = h => fmt(h, h % 1 ? 1 : 0);
+const somaHoras = l => l.reduce((t, x) => t + (num(x.horas) || 0), 0);
+function linhaHora(x){
+  const info = [rotCat(x.categoria), x.data ? fmtData(x.data) : "", x.arquivoNome ? "Arquivo: " + x.arquivoNome : ""].filter(Boolean).join(" · ");
+  return `<div class="row"><div class="grow"><div class="t">${esc(x.titulo)}</div><div class="m">${esc(info)}</div></div>
+    <span class="chip ${x.anexada ? "ok" : "warn"} num">${nHoras(num(x.horas) || 0)} h</span>
+    ${x.arquivoNome ? `<button class="ghost" data-acao="horaArq" data-id="${x.id}" aria-label="Abrir arquivo de ${esc(x.titulo)}">Abrir</button>` : ""}
+    <button class="ghost" data-acao="hora" data-id="${x.id}" aria-label="Editar ${esc(x.titulo)}">Editar</button></div>`;
+}
+function vHoras(){
+  const l = [...S.horas].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
+  const anex = l.filter(x => x.anexada), pend = l.filter(x => !x.anexada);
+  const meta = num(S.config.horasMeta) || 0, feitas = somaHoras(anex), total = somaHoras(l);
+  const pct = meta ? Math.min(100, feitas / meta * 100) : 0;
+  const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas já anexadas` : "horas já anexadas"}</span></div>
+    ${meta ? `<div class="meter"><i style="width:${pct}%;background:var(--ok)"></i></div>` : ""}
+    <p class="need" style="margin:6px 0 0">${pend.length ? `Falta anexar ${nHoras(somaHoras(pend))} h (${pend.length} ${pend.length > 1 ? "atividades" : "atividade"}). Total registrado: ${nHoras(total)} h.` : l.length ? "Tudo o que você registrou já foi anexado." : "Registre as atividades e guarde o certificado de cada uma."}
+    ${meta ? "" : " Para ver o progresso, informe a meta de horas em Critérios (aba Matérias)."}</p></div>`;
+  const grupo = (tit, itens, vazio) => `<section class="panel" style="margin-top:26px"><div class="bar" style="margin-bottom:8px"><h3 style="margin:0">${tit}</h3></div>
+    ${itens.length ? `<div class="list">${itens.map(linhaHora).join("")}</div>` : `<p class="empty">${vazio}</p>`}</section>`;
+  return `<div class="bar"><span class="need">Os arquivos ficam só neste aparelho.</span><button class="primary" data-acao="hora">+ Atividade</button></div>
+    ${resumo}${grupo("A anexar", pend, "Nada pendente.")}${grupo("Já anexadas", anex, "Nenhuma ainda.")}`;
+}
+async function abrirArqHora(id){
+  const x = S.horas.find(h => h.id === id); if (!x) return;
+  let f; try { f = await arq("get", id); } catch(e){ f = null; }
+  if (!f){ toast("O arquivo não está neste aparelho. Anexe de novo em Editar."); return; }
+  const url = URL.createObjectURL(f);
+  const w = window.open(url, "_blank");
+  if (!w){ const a = document.createElement("a"); a.href = url; a.download = x.arquivoNome || "certificado"; a.click(); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+function abrirHora(id){
+  const item = id ? S.horas.find(x => x.id === id) : null, d = item || {};
+  let tirar = false;
+  const campos = [
+    {k:"titulo",l:"Atividade",t:"text",req:1,ph:"Ex.: Semana do Contador, monitoria"},
+    {duo:[{k:"horas",l:"Horas",t:"num"},{k:"data",l:"Data",t:"date"}]},
+    {k:"categoria",l:"Categoria",t:"select",opts:CAT_HORAS},
+    {k:"anexada",l:"Já anexei no sistema da faculdade",t:"check"},
+    {k:"obs",l:"Observação",t:"text"} ];
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>${id ? "Editar" : "Nova"} atividade</h2>
+    ${campos.map(c => c.duo ? `<div class="duo">${c.duo.map(q => campoHTML(q, d[q.k])).join("")}</div>` : campoHTML(c, d[c.k])).join("")}
+    <div class="field"><span class="label" style="text-transform:none;letter-spacing:0;font-size:.82rem">Certificado (PDF ou foto)</span>
+      <span class="need" id="hArqNome"></span>
+      <input type="file" id="hArq" class="sr" accept="application/pdf,image/*">
+      <label for="hArq" class="arquivo" id="hArqBtn">Escolher arquivo…</label>
+      <button type="button" class="ghost" id="hArqTirar" hidden>Remover arquivo</button>
+      <span class="need">Fica só neste aparelho, até 15 MB.</span></div>
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions">${id ? '<button type="button" class="danger" id="del">Excluir</button>' : "<span></span>"}
+      <div class="r"><button type="button" id="cancel">Cancelar</button><button type="submit" class="primary">Salvar</button></div></div>`;
+  const atualiza = () => {
+    const novo = $("#hArq").files[0], nome = novo ? novo.name : (!tirar && d.arquivoNome) || "";
+    $("#hArqNome").textContent = nome ? "Arquivo: " + nome : "Nenhum arquivo guardado.";
+    $("#hArqTirar").hidden = !nome; $("#hArqBtn").textContent = nome ? "Trocar arquivo…" : "Escolher arquivo…";
+  };
+  atualiza();
+  $("#hArq").onchange = () => { tirar = false; atualiza(); };
+  $("#hArqTirar").onclick = () => { $("#hArq").value = ""; tirar = true; atualiza(); };
+  frm.onsubmit = async e => {
+    e.preventDefault();
+    const fd = new FormData(frm), titulo = String(fd.get("titulo") || "").trim(), horas = num(fd.get("horas")), dataBr = fd.get("data") ?? "", data = brParaIso(dataBr);
+    if (!titulo){ mostrarErro("f_titulo", "Escreva o nome da atividade."); return; }
+    if (horas == null || horas <= 0){ mostrarErro("f_horas", "Informe as horas (maior que zero), só números."); return; }
+    if (data == null){ mostrarErro("f_data", "Data inválida. Use dd/mm/aaaa, por exemplo 05/03/2026."); return; }
+    const novo = $("#hArq").files[0];
+    if (novo && novo.size > MAX_ARQ){ mostrarErro("hArqBtn", "O arquivo passa de 15 MB. Escolha um menor."); return; }
+    const nid = id || uid(); let { arquivoNome, arquivoTipo } = d;
+    try {
+      if (novo){ await arq("put", nid, novo); arquivoNome = novo.name; arquivoTipo = novo.type; }
+      else if (tirar){ await arq("del", nid); arquivoNome = arquivoTipo = ""; }
+    } catch(err){ mostrarErro("hArqBtn", "Não deu para guardar o arquivo neste navegador. A atividade pode ser salva sem ele."); return; }
+    const { id:_, ...resto } = item || {};
+    const ok = await salvar("horas", nid, { ...resto, titulo, horas, data, categoria: fd.get("categoria"), anexada: fd.has("anexada"), obs: fd.get("obs") || "", arquivoNome: arquivoNome || "", arquivoTipo: arquivoTipo || "" });
+    if (ok){ $("#dlg").close(); toast("Salvo"); }
+  };
+  $("#cancel").onclick = () => $("#dlg").close();
+  const del = $("#del");
+  if (del) del.onclick = async () => {
+    if (del.dataset.arm){ del.disabled = true; try { await arq("del", id); } catch(_){} await apagar("horas", id); $("#dlg").close(); toast("Excluído"); return; }
+    del.dataset.arm = 1; del.textContent = "Confirmar exclusão";
+    setTimeout(() => { if (del.isConnected){ delete del.dataset.arm; del.textContent = "Excluir"; } }, 3500);
+  };
+  $("#dlg").showModal();
+}
+
 /* ---------- render e rotas ---------- */
-const TITULOS = { painel:"Hoje", cronograma:"Cronograma", provas:"Provas e notas", faltas:"Faltas", materias:"Matérias" };
-const VIEWS = { painel:vPainel, cronograma:vCronograma, provas:vProvas, faltas:vFaltas, materias:vMaterias };
+const TITULOS = { painel:"Hoje", cronograma:"Cronograma", provas:"Provas e notas", faltas:"Faltas", materias:"Matérias", horas:"Horas" };
+const VIEWS = { painel:vPainel, cronograma:vCronograma, provas:vProvas, faltas:vFaltas, materias:vMaterias, horas:vHoras };
 function rota(){ const h = location.hash.slice(1); return VIEWS[h] ? h : "painel"; }
 let renderPend = false;
 function render(){
@@ -1979,6 +2093,8 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.mes){ const n = +b.dataset.mes, h = new Date(); mesRef = n ? new Date(mesRef.getFullYear(), mesRef.getMonth()+n, 1) : new Date(h.getFullYear(), h.getMonth(), 1); render(); }
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
   else if (b.id==="cfg") abrirConfig();
+  else if (b.dataset.acao==="hora") abrirHora(b.dataset.id);
+  else if (b.dataset.acao==="horaArq") abrirArqHora(b.dataset.id);
   else if (b.dataset.acao==="backup") abrirBackup();
   else if (b.dataset.acao==="agenda") exportarAgenda();
   else if (b.dataset.acao==="lembretes") abrirLembretes();
