@@ -565,6 +565,28 @@ function juntar(local, remoto){
   out.config = (remoto.config?._t || 0) > (local.config?._t || 0) ? remoto.config : local.config;
   return out;
 }
+// Certificados das horas complementares: cada um vira um arquivo "cert-..." na mesma pasta escondida.
+// Sobe o que só existe aqui, baixa o que só existe no Drive e apaga do Drive o que não é mais usado.
+async function sincArquivos(){
+  const q = encodeURIComponent("name contains 'cert-'");
+  const lista = (await (await drive(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&pageSize=1000&fields=files(id,name)&q=${q}`)).json()).files || [];
+  const noDrive = new Map(lista.map(f => [f.name, f.id])), usados = new Set();
+  for (const x of S.horas){
+    if (!x.arquivoNome) continue;
+    const ch = chaveArq(x.id, x.arquivoV), nome = "cert-" + ch, fid = noDrive.get(nome); usados.add(nome);
+    let local; try { local = await arq("get", ch); } catch(_){ continue; }
+    if (local && !fid){
+      const fd = new FormData();
+      fd.append("metadata", new Blob([JSON.stringify({ name:nome, parents:["appDataFolder"] })], { type:"application/json" }));
+      fd.append("file", local);
+      await drive("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", { method:"POST", body:fd });
+    } else if (!local && fid){
+      const b = await (await drive(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`)).blob();
+      try { await arq("put", ch, new File([b], x.arquivoNome, { type: x.arquivoTipo || b.type })); } catch(_){}
+    }
+  }
+  for (const [nome, fid] of noDrive) if (!usados.has(nome)) await drive(`https://www.googleapis.com/drive/v3/files/${fid}`, { method:"DELETE" });
+}
 function statusSinc(tipo, msg){
   const el = $("#status"); if (!el) return;
   el.textContent = tipo === "rodando" ? "Sincronizando…"
@@ -597,6 +619,7 @@ async function sincronizar(interativo){
       if (junto.config) S.config = { mediaMin:6, freqMin:75, exameMedia:5, exameDireito:0, ...junto.config };
       aplicando = true; saveLocal(); aplicando = false; render();
     }
+    await sincArquivos();
     sinc.ultima = Date.now(); guardarSinc(); statusSinc("ok");
     return true;
   } catch(e){
@@ -1623,7 +1646,6 @@ function abrirConfig(){
   frm.innerHTML = `<h2>Critérios de aprovação</h2>
     <div class="field"><label for="c_media">Média mínima para aprovação (0 a 10)</label><input id="c_media" inputmode="decimal" value="${esc(fmt(S.config.mediaMin))}"></div>
     <div class="field"><label for="c_freq">Frequência mínima (%)</label><input id="c_freq" inputmode="numeric" value="${esc(S.config.freqMin)}"><span class="need">Com 75%, pode faltar até 25% das aulas.</span></div>
-    <div class="field"><label for="c_horas">Horas complementares exigidas (0 = não mostrar meta)</label><input id="c_horas" inputmode="decimal" value="${esc(nHoras(num(S.config.horasMeta) || 0))}"></div>
     <h3 style="margin-top:6px">Exame final</h3>
     <p class="need">Média final = (média do semestre + nota do exame) ÷ 2.</p>
     <div class="field"><label for="c_exame">Média final mínima depois do exame (0 a 10)</label><input id="c_exame" inputmode="decimal" value="${esc(fmt(num(S.config.exameMedia) ?? 5))}"></div>
@@ -1637,9 +1659,7 @@ function abrirConfig(){
     const exameMedia = num($("#c_exame").value), exameDireito = num($("#c_direito").value);
     if (exameMedia == null || exameMedia < 0 || exameMedia > 10){ mostrarErro("c_exame", "A média final do exame precisa ficar entre 0 e 10."); return; }
     if (exameDireito == null || exameDireito < 0 || exameDireito > 10){ mostrarErro("c_direito", "A média para ter direito ao exame precisa ficar entre 0 e 10."); return; }
-    const horasMeta = num($("#c_horas").value);
-    if (horasMeta == null || horasMeta < 0){ mostrarErro("c_horas", "Use um número de horas (0 ou mais)."); return; }
-    await salvarConfig({ ...S.config, mediaMin, freqMin, exameMedia, exameDireito, horasMeta });
+    await salvarConfig({ ...S.config, mediaMin, freqMin, exameMedia, exameDireito });
     $("#dlg").close(); toast("Salvo"); };
   $("#cancel").onclick = () => $("#dlg").close();
   $("#dlg").showModal();
@@ -1957,6 +1977,8 @@ function exportarAgenda(){
 const CAT_HORAS = [["ensino","Ensino"],["pesquisa","Pesquisa"],["extensao","Extensão"],["cultura","Cultura e eventos"],["outras","Outras"]];
 const rotCat = c => (CAT_HORAS.find(x => x[0] === c) || [0, "Outras"])[1];
 const MAX_ARQ = 15 * 1024 * 1024;
+// chave do arquivo no armário (e nome no Drive): muda quando o arquivo é trocado, assim os aparelhos percebem
+const chaveArq = (id, v) => v ? id + "@" + v : id;
 function arq(modo, id, arquivo){
   return new Promise((ok, no) => {
     if (!window.indexedDB){ no(new Error("sem indexedDB")); return; }
@@ -1971,6 +1993,8 @@ function arq(modo, id, arquivo){
     };
   });
 }
+const textoArquivos = () => PODE_SINC && sinc.conectado ? "Os arquivos também vão para o seu Google Drive."
+  : "Os arquivos ficam só neste aparelho." + (PODE_SINC ? " Ligue a sincronização com o Google Drive para guardar uma cópia lá." : "");
 const nHoras = h => fmt(h, h % 1 ? 1 : 0);
 const somaHoras = l => l.reduce((t, x) => t + (num(x.horas) || 0), 0);
 function linhaHora(x){
@@ -1983,20 +2007,50 @@ function linhaHora(x){
 function vHoras(){
   const l = [...S.horas].sort((a, b) => (b.data || "").localeCompare(a.data || ""));
   const anex = l.filter(x => x.anexada), pend = l.filter(x => !x.anexada);
-  const meta = num(S.config.horasMeta) || 0, feitas = somaHoras(anex), total = somaHoras(l);
+  const meta = num(S.config.horasMeta) || 0, total = somaHoras(l), lims = S.config.horasLimites || {};
+  const catDe = x => CAT_HORAS.some(c => c[0] === x.categoria) ? x.categoria : "outras";
+  // em cada categoria só contam as horas até o limite (se houver)
+  const cats = CAT_HORAS.map(([k, n]) => { const a = somaHoras(anex.filter(x => catDe(x) === k)), t = somaHoras(l.filter(x => catDe(x) === k)), lim = num(lims[k]) || 0;
+    return { n, a, t, lim, conta: lim ? Math.min(a, lim) : a }; });
+  const feitas = cats.reduce((t, c) => t + c.conta, 0);
   const pct = meta ? Math.min(100, feitas / meta * 100) : 0;
-  const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas já anexadas` : "horas já anexadas"}</span></div>
+  const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas contam` : "horas já anexadas contam"}</span></div>
     ${meta ? `<div class="meter"><i style="width:${pct}%;background:var(--ok)"></i></div>` : ""}
     <p class="need" style="margin:6px 0 0">${pend.length ? `Falta anexar ${nHoras(somaHoras(pend))} h (${pend.length} ${pend.length > 1 ? "atividades" : "atividade"}). Total registrado: ${nHoras(total)} h.` : l.length ? "Tudo o que você registrou já foi anexado." : "Registre as atividades e guarde o certificado de cada uma."}
-    ${meta ? "" : " Para ver o progresso, informe a meta de horas em Critérios (aba Matérias)."}</p></div>`;
+    ${meta ? "" : " Para ver o progresso, informe a meta em Metas e limites."}</p></div>`;
+  const linhaCat = c => { const sobra = c.lim && c.t > c.lim;
+    return `<div class="row"><div class="grow"><div class="t">${esc(c.n)}</div><div class="m">${nHoras(c.a)} h anexadas${c.lim ? ` · limite ${nHoras(c.lim)} h` : ""}${sobra ? ` · você registrou ${nHoras(c.t)} h, só ${nHoras(c.lim)} contam` : ""}</div></div>
+      <span class="chip ${sobra || (c.lim && c.conta >= c.lim) ? "warn" : c.conta ? "ok" : ""} num">${nHoras(c.conta)}${c.lim ? " / " + nHoras(c.lim) : ""} h</span></div>`; };
+  const porCat = cats.filter(c => c.t || c.lim);
   const grupo = (tit, itens, vazio) => `<section class="panel" style="margin-top:26px"><div class="bar" style="margin-bottom:8px"><h3 style="margin:0">${tit}</h3></div>
     ${itens.length ? `<div class="list">${itens.map(linhaHora).join("")}</div>` : `<p class="empty">${vazio}</p>`}</section>`;
-  return `<div class="bar"><span class="need">Os arquivos ficam só neste aparelho.</span><button class="primary" data-acao="hora">+ Atividade</button></div>
-    ${resumo}${grupo("A anexar", pend, "Nada pendente.")}${grupo("Já anexadas", anex, "Nenhuma ainda.")}`;
+  return `<div class="bar"><button class="ghost" data-acao="limitesHoras">Metas e limites</button><button class="primary" data-acao="hora">+ Atividade</button></div><p class="need" style="margin:-6px 4px 14px">${textoArquivos()}</p>
+    ${resumo}${porCat.length ? `<section class="panel"><div class="bar" style="margin-bottom:8px"><h3 style="margin:0">Por categoria</h3></div><div class="list">${porCat.map(linhaCat).join("")}</div></section>` : ""}${grupo("A anexar", pend, "Nada pendente.")}${grupo("Já anexadas", anex, "Nenhuma ainda.")}`;
+}
+function abrirLimitesHoras(){
+  const lims = S.config.horasLimites || {}, v = n => esc(nHoras(num(n) || 0));
+  const frm = $("#frm");
+  frm.innerHTML = `<h2>Metas e limites</h2>
+    <div class="field"><label for="l_meta">Total de horas exigidas</label><input id="l_meta" inputmode="decimal" value="${v(S.config.horasMeta)}"><span class="need">0 esconde a barra de progresso.</span></div>
+    <h3 style="margin-top:6px">Limite por categoria</h3>
+    <p class="need">Muitas faculdades só contam um máximo de horas por tipo. Use 0 se não há limite.</p>
+    ${CAT_HORAS.map(([k, n]) => `<div class="field"><label for="l_${k}">${n} (horas)</label><input id="l_${k}" inputmode="decimal" value="${v(lims[k])}"></div>`).join("")}
+    <p class="erro" id="erro" role="alert" hidden></p>
+    <div class="actions"><span></span><div class="r"><button type="button" id="cancel">Cancelar</button><button class="primary" type="submit">Salvar</button></div></div>`;
+  frm.onsubmit = async e => { e.preventDefault();
+    const horasMeta = num($("#l_meta").value), horasLimites = {};
+    if (horasMeta == null || horasMeta < 0){ mostrarErro("l_meta", "Use um número de horas (0 ou mais)."); return; }
+    for (const [k, n] of CAT_HORAS){ const h = num($("#l_" + k).value);
+      if (h == null || h < 0){ mostrarErro("l_" + k, n + ": use um número de horas (0 ou mais)."); return; }
+      horasLimites[k] = h; }
+    await salvarConfig({ ...S.config, horasMeta, horasLimites });
+    $("#dlg").close(); toast("Salvo"); };
+  $("#cancel").onclick = () => $("#dlg").close();
+  $("#dlg").showModal();
 }
 async function abrirArqHora(id){
   const x = S.horas.find(h => h.id === id); if (!x) return;
-  let f; try { f = await arq("get", id); } catch(e){ f = null; }
+  let f; try { f = await arq("get", chaveArq(id, x.arquivoV)); } catch(e){ f = null; }
   if (!f){ toast("O arquivo não está neste aparelho. Anexe de novo em Editar."); return; }
   const url = URL.createObjectURL(f);
   const w = window.open(url, "_blank");
@@ -2020,7 +2074,7 @@ function abrirHora(id){
       <input type="file" id="hArq" class="sr" accept="application/pdf,image/*">
       <label for="hArq" class="arquivo" id="hArqBtn">Escolher arquivo…</label>
       <button type="button" class="ghost" id="hArqTirar" hidden>Remover arquivo</button>
-      <span class="need">Fica só neste aparelho, até 15 MB.</span></div>
+      <span class="need">Até 15 MB. ${textoArquivos()}</span></div>
     <p class="erro" id="erro" role="alert" hidden></p>
     <div class="actions">${id ? '<button type="button" class="danger" id="del">Excluir</button>' : "<span></span>"}
       <div class="r"><button type="button" id="cancel">Cancelar</button><button type="submit" class="primary">Salvar</button></div></div>`;
@@ -2040,19 +2094,19 @@ function abrirHora(id){
     if (data == null){ mostrarErro("f_data", "Data inválida. Use dd/mm/aaaa, por exemplo 05/03/2026."); return; }
     const novo = $("#hArq").files[0];
     if (novo && novo.size > MAX_ARQ){ mostrarErro("hArqBtn", "O arquivo passa de 15 MB. Escolha um menor."); return; }
-    const nid = id || uid(); let { arquivoNome, arquivoTipo } = d;
+    const nid = id || uid(); let { arquivoNome, arquivoTipo, arquivoV } = d;
     try {
-      if (novo){ await arq("put", nid, novo); arquivoNome = novo.name; arquivoTipo = novo.type; }
-      else if (tirar){ await arq("del", nid); arquivoNome = arquivoTipo = ""; }
+      if (novo){ const v = Date.now(); await arq("put", chaveArq(nid, v), novo); if (id && arquivoNome) await arq("del", chaveArq(nid, arquivoV)); arquivoNome = novo.name; arquivoTipo = novo.type; arquivoV = v; }
+      else if (tirar){ await arq("del", chaveArq(nid, arquivoV)); arquivoNome = arquivoTipo = ""; arquivoV = 0; }
     } catch(err){ mostrarErro("hArqBtn", "Não deu para guardar o arquivo neste navegador. A atividade pode ser salva sem ele."); return; }
     const { id:_, ...resto } = item || {};
-    const ok = await salvar("horas", nid, { ...resto, titulo, horas, data, categoria: fd.get("categoria"), anexada: fd.has("anexada"), obs: fd.get("obs") || "", arquivoNome: arquivoNome || "", arquivoTipo: arquivoTipo || "" });
+    const ok = await salvar("horas", nid, { ...resto, titulo, horas, data, categoria: fd.get("categoria"), anexada: fd.has("anexada"), obs: fd.get("obs") || "", arquivoNome: arquivoNome || "", arquivoTipo: arquivoTipo || "", arquivoV: arquivoV || 0 });
     if (ok){ $("#dlg").close(); toast("Salvo"); }
   };
   $("#cancel").onclick = () => $("#dlg").close();
   const del = $("#del");
   if (del) del.onclick = async () => {
-    if (del.dataset.arm){ del.disabled = true; try { await arq("del", id); } catch(_){} await apagar("horas", id); $("#dlg").close(); toast("Excluído"); return; }
+    if (del.dataset.arm){ del.disabled = true; try { await arq("del", chaveArq(id, item.arquivoV)); } catch(_){} await apagar("horas", id); $("#dlg").close(); toast("Excluído"); return; }
     del.dataset.arm = 1; del.textContent = "Confirmar exclusão";
     setTimeout(() => { if (del.isConnected){ delete del.dataset.arm; del.textContent = "Excluir"; } }, 3500);
   };
@@ -2094,6 +2148,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
   else if (b.id==="cfg") abrirConfig();
   else if (b.dataset.acao==="hora") abrirHora(b.dataset.id);
+  else if (b.dataset.acao==="limitesHoras") abrirLimitesHoras();
   else if (b.dataset.acao==="horaArq") abrirArqHora(b.dataset.id);
   else if (b.dataset.acao==="backup") abrirBackup();
   else if (b.dataset.acao==="agenda") exportarAgenda();
