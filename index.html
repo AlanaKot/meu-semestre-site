@@ -126,6 +126,18 @@ button.danger{color:var(--bad)}
 
 .notice{background:var(--surface);border-radius:var(--r);padding:12px 12px 12px 16px;color:var(--muted);font-size:.87rem;margin-bottom:16px;display:flex;gap:12px;align-items:center;justify-content:space-between}
 .notice button{flex:none}
+.row.hora{flex-wrap:wrap;row-gap:2px}
+.row.hora .grow{flex:1 1 100%}
+.row.hora .chip{margin-right:auto}
+/* celular: a tabela de situação vira uma lista empilhada, sem rolar para o lado */
+@media (max-width:700px){
+  .empilha table,.empilha tbody,.empilha tr,.empilha td{display:block;width:100%}
+  .empilha thead{display:none}
+  .empilha tr{padding:10px 0;border-bottom:.5px solid var(--line)}
+  .empilha td{border:0;padding:3px 16px 3px 0;min-width:0!important}
+  .empilha td[data-l]::before{content:attr(data-l);display:block;font-size:.76rem;color:var(--muted)}
+}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
 .notice a{flex:none;font-weight:600;color:var(--accent);text-decoration:none}
 .empty{color:var(--muted);font-size:.94rem;padding:8px 0}
 .dot{display:inline-block;width:10px;height:10px;border-radius:50%;flex:none}
@@ -758,6 +770,23 @@ function resumoFaltas(materiaId){
   const limite = ch ? Math.floor(ch * (1 - S.config.freqMin/100)) : null;
   return { total, just, limite, restam: limite != null ? limite - total : null };
 }
+// Um veredito por matéria, juntando notas, exame e faltas. Devolve lista de [classe, texto].
+function veredito(m){
+  const n = resumoNotas(m.id), f = resumoFaltas(m.id), out = [];
+  if (f.limite != null && f.total > f.limite) return [["bad", "Reprovada por falta"]];
+  if (!n.n) out.push(["", "Sem avaliações"]);
+  else if (n.resta === 0){
+    if (n.media >= S.config.mediaMin) out.push(["ok", "Aprovada por nota"]);
+    else { const e = calcExame(n);
+      if (!e || e.semDireito || e.precisa > 10) out.push(["bad", "Reprovada por nota"]);
+      else out.push(["warn", `Exame: precisa de ${fmt(e.precisa)}`]); }
+  } else if (n.media == null) out.push(["", "Sem notas ainda"]);
+  else if (n.precisa <= 0) out.push(["ok", "Nota garantida"]);
+  else if (n.precisa > 10) out.push(["bad", "Média fora de alcance"]);
+  else out.push([n.precisa > 8 ? "warn" : "", `Precisa de ${fmt(n.precisa)} no restante`]);
+  if (f.restam != null && f.restam <= 2) out.push(["warn", f.restam === 0 ? "Sem folga de faltas" : `Pode faltar só mais ${f.restam}`]);
+  return out;
+}
 function chipMedia(media){
   if (media == null) return '<span class="chip">sem notas</span>';
   const min = S.config.mediaMin;
@@ -935,9 +964,9 @@ function vPainel(){
     if (n.precisa != null && n.n) need = n.precisa > 10 ? `<span class="chip bad">média fora de alcance</span>` : n.precisa <= 0 ? `<span class="chip ok">já garantida</span>` : `precisa de <b class="num">${fmt(n.precisa)}</b> no restante`;
     else need = textoExame(n);
     return `<tr>
-      <td><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}${exTag(m)}</td>
-      <td>${chipMedia(n.media)}<div class="need">${need}</div></td>
-      <td style="min-width:140px"><span class="num">${f.total}${f.limite!=null?" / "+f.limite:""}</span> <span class="need">aulas</span>
+      <td><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}${exTag(m)}<div class="chips">${veredito(m).map(([c, t]) => `<span class="chip ${c}">${esc(t)}</span>`).join(" ")}</div></td>
+      <td data-l="Média atual">${chipMedia(n.media)}<div class="need">${need}</div></td>
+      <td data-l="Faltas / limite" style="min-width:140px"><span class="num">${f.total}${f.limite!=null?" / "+f.limite:""}</span> <span class="need">aulas</span>
         ${f.limite!=null?`<div class="meter"><i style="width:${pct}%;background:${corFaltas(f)}"></i></div>`:""}</td>
     </tr>`;
   }).join("");
@@ -970,7 +999,7 @@ function vPainel(){
   ${painelPlano()}
   <section class="panel" style="margin-top:26px">
     <div class="bar" style="margin-bottom:8px"><h3>Situação por matéria</h3><span class="need">Média mínima <b class="num">${fmt(S.config.mediaMin)}</b> · frequência mínima <b class="num">${S.config.freqMin}%</b> <button class="ghost" id="cfg">Ajustar</button></span></div>
-    ${S.materias.length ? `<div class="tbl-wrap"><table><thead><tr><th>Matéria</th><th>Média atual</th><th>Faltas / limite</th></tr></thead><tbody>${linhasMat}</tbody></table></div>`
+    ${S.materias.length ? `<div class="tbl-wrap empilha"><table><thead><tr><th>Matéria</th><th>Média atual</th><th>Faltas / limite</th></tr></thead><tbody>${linhasMat}</tbody></table></div>`
       : `<p class="empty">Cadastre suas matérias primeiro. <button class="primary" data-novo="materias">+ Matéria</button></p>`}
   </section>`;
 }
@@ -1058,6 +1087,43 @@ function vMes(){
       <div class="grow"><div class="t">${it.t} <span class="chip">${ROT_ITEM[it.tipo]}</span></div><div class="m">${it.sub}</div></div>
       <button class="ghost" data-edit="${it.col}" data-id="${it.id}">Editar</button></div>`).join("")}</div>` : '<p class="empty">Nada marcado neste mês.</p>'}</section>`;
 }
+// Desenha as aulas da semana numa imagem (canvas) e compartilha ou baixa. Tudo no aparelho.
+async function imagemHorario(){
+  const aulas = S.cronograma.filter(b => b.tipo === "aula" && b.inicio && b.fim);
+  if (!aulas.length){ toast("Cadastre as aulas no Cronograma primeiro."); return; }
+  const min = h => { const [a, b] = h.split(":").map(Number); return a * 60 + b; };
+  const dias = [1,2,3,4,5,6,0].filter(d => (d >= 1 && d <= 5) || aulas.some(b => +b.dia === d));
+  const ini = Math.floor(Math.min(...aulas.map(b => min(b.inicio))) / 60) * 60, fim = Math.ceil(Math.max(...aulas.map(b => min(b.fim))) / 60) * 60;
+  const W = 1080, L = 80, T = 150, cw = (W - L - 20) / dias.length, hh = 90, H = T + (fim - ini) / 60 * hh + 30;
+  const c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+  const fonte = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
+  g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); g.textBaseline = "alphabetic";
+  g.fillStyle = "#000"; g.font = `700 44px ${fonte}`; g.fillText("Meu horário", 24, 62);
+  g.fillStyle = "#6c6c70"; g.font = `400 24px ${fonte}`; g.fillText("Aulas da semana", 24, 96);
+  g.strokeStyle = "#e5e5ea"; g.lineWidth = 1; g.fillStyle = "#8e8e93"; g.font = `400 20px ${fonte}`;
+  for (let m = ini; m <= fim; m += 60){ const y = T + (m - ini) / 60 * hh; g.beginPath(); g.moveTo(L, y); g.lineTo(W - 20, y); g.stroke(); g.fillText(String(m / 60).padStart(2, "0") + "h", 20, y + 7); }
+  g.textAlign = "center"; g.fillStyle = "#3c3c43"; g.font = `600 22px ${fonte}`;
+  dias.forEach((d, i) => g.fillText(DIAS_CURTO[d], L + i * cw + cw / 2, T - 12));
+  g.textAlign = "left";
+  // corta o texto para caber na largura, com "…" no fim
+  const cabe = (t, w) => { if (g.measureText(t).width <= w) return t; while (t.length > 1 && g.measureText(t + "…").width > w) t = t.slice(0, -1); return t + "…"; };
+  dias.forEach((d, i) => aulas.filter(b => +b.dia === d).forEach(b => {
+    const x = L + i * cw + 4, y = T + (min(b.inicio) - ini) / 60 * hh + 2, w = cw - 8, h = Math.max(30, (min(b.fim) - min(b.inicio)) / 60 * hh - 4);
+    g.fillStyle = corDe(b.materiaId); g.beginPath(); g.roundRect ? g.roundRect(x, y, w, h, 10) : g.rect(x, y, w, h); g.fill();
+    g.save(); g.beginPath(); g.rect(x, y, w, h); g.clip(); g.fillStyle = "#fff";
+    g.font = `600 20px ${fonte}`; g.fillText(cabe(nomeDe(b.materiaId), w - 16), x + 8, y + 26);
+    if (h > 56){ g.font = `400 17px ${fonte}`; g.fillText(`${b.inicio}–${b.fim}`, x + 8, y + 48); }
+    g.restore();
+  }));
+  const blob = await new Promise(ok => c.toBlob(ok, "image/png"));
+  if (!blob){ toast("Não foi possível gerar a imagem."); return; }
+  const f = new File([blob], "meu-horario.png", { type: "image/png" });
+  try { if (navigator.canShare?.({ files: [f] })){ await navigator.share({ files: [f], title: "Meu horário" }); return; } }
+  catch(e){ if (e.name === "AbortError") return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "meu-horario.png";
+  document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast("Imagem do horário baixada");
+}
 function vCronograma(){
   if (visCron === "mes") return vMes();
   const hoje = new Date().getDay();
@@ -1067,7 +1133,7 @@ function vCronograma(){
     return a + Math.max(0,(h2*60+m2)-(h1*60+m1)); },0) / 60;
   return `${avisoExemplo()}
   <div class="bar"><div><div class="need">Estudo planejado: <b class="num">${fmt(horas)} h</b> por semana (sem contar aulas)</div></div>
-    <div class="filter">${seletorVis()}<button data-acao="periodo">Feriados e período</button><button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
+    <div class="filter">${seletorVis()}<button data-acao="periodo">Feriados e período</button><button data-acao="imgHorario">Compartilhar horário</button><button class="primary" data-novo="cronograma">+ Bloco</button></div></div>
   <div class="week">${ordem.map(d => {
     const bl = S.cronograma.filter(b => +b.dia === d).sort((a,b) => (a.inicio||"").localeCompare(b.inicio||""));
     const dt = dataNaSemana(d), folga = semAula(dt);
@@ -2025,7 +2091,7 @@ const nHoras = h => fmt(h, h % 1 ? 1 : 0);
 const somaHoras = l => l.reduce((t, x) => t + (num(x.horas) || 0), 0);
 function linhaHora(x){
   const info = [rotCat(x.categoria), x.data ? fmtData(x.data) : "", x.arquivoNome ? "Arquivo: " + x.arquivoNome : ""].filter(Boolean).join(" · ");
-  return `<div class="row"><div class="grow"><div class="t">${esc(x.titulo)}</div><div class="m">${esc(info)}</div></div>
+  return `<div class="row hora"><div class="grow"><div class="t">${esc(x.titulo)}</div><div class="m">${esc(info)}</div></div>
     <span class="chip ${x.anexada ? "ok" : "warn"} num">${nHoras(num(x.horas) || 0)} h</span>
     ${x.arquivoNome ? `<button class="ghost" data-acao="horaArq" data-id="${x.id}" aria-label="Abrir arquivo de ${esc(x.titulo)}">Abrir</button>` : ""}
     <button class="ghost" data-acao="hora" data-id="${x.id}" aria-label="Editar ${esc(x.titulo)}">Editar</button></div>`;
@@ -2040,7 +2106,7 @@ function vHoras(){
     return { n, a, t, lim, conta: lim ? Math.min(a, lim) : a }; });
   const feitas = cats.reduce((t, c) => t + c.conta, 0);
   const pct = meta ? Math.min(100, feitas / meta * 100) : 0;
-  const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas contam` : "horas já anexadas contam"}</span></div>
+  const resumo = `<div class="card" style="margin-bottom:26px"><div><span class="big">${nHoras(feitas)}</span> <span class="need">${meta ? `de ${nHoras(meta)} horas contam` : "horas anexadas"}</span></div>
     ${meta ? `<div class="meter"><i style="width:${pct}%;background:var(--ok)"></i></div>` : ""}
     <p class="need" style="margin:6px 0 0">${pend.length ? `Falta anexar ${nHoras(somaHoras(pend))} h (${pend.length} ${pend.length > 1 ? "atividades" : "atividade"}). Total registrado: ${nHoras(total)} h.` : l.length ? "Tudo o que você registrou já foi anexado." : "Registre as atividades e guarde o certificado de cada uma."}
     ${meta ? "" : " Para ver o progresso, informe a meta em Metas e limites."}
@@ -2183,6 +2249,7 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.mes){ const n = +b.dataset.mes, h = new Date(); mesRef = n ? new Date(mesRef.getFullYear(), mesRef.getMonth()+n, 1) : new Date(h.getFullYear(), h.getMonth(), 1); render(); }
   else if (b.dataset.edit) abrirForm(b.dataset.edit, b.dataset.id);
   else if (b.id==="cfg") abrirConfig();
+  else if (b.dataset.acao==="imgHorario") imagemHorario();
   else if (b.dataset.acao==="hora") abrirHora(b.dataset.id);
   else if (b.dataset.acao==="limitesHoras") abrirLimitesHoras();
   else if (b.dataset.acao==="horaArq") abrirArqHora(b.dataset.id);
