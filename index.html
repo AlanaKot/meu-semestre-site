@@ -1754,8 +1754,19 @@ function abrirSimulador(materiaId){
 }
 
 // Baixa o backup. Devolve true quando o arquivo foi entregue.
+// Certificados das horas complementares dentro do backup (em texto base64, por isso o arquivo fica maior)
+const blobParaB64 = b => new Promise((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = () => no(r.error); r.readAsDataURL(b); });
+async function arquivosDoBackup(){
+  const out = [];
+  for (const x of S.horas){
+    if (!x.arquivoNome) continue;
+    try { const ch = chaveArq(x.id, x.arquivoV), f = await arq("get", ch); if (f) out.push({ chave:ch, nome:x.arquivoNome, tipo:x.arquivoTipo || f.type, dados:await blobParaB64(f) }); } catch(_){}
+  }
+  return out;
+}
 async function baixarBackup(){
-  const data = JSON.stringify({ app:"meu-semestre", versao:1, ...Object.fromEntries(COLS.map(c=>[c,S[c]])), config:S.config }, null, 2);
+  const arquivos = await arquivosDoBackup();
+  const data = JSON.stringify({ app:"meu-semestre", versao:1, ...Object.fromEntries(COLS.map(c=>[c,S[c]])), config:S.config, ...(arquivos.length ? { arquivos } : {}) }, null, 2);
   const nome = "meu-semestre-"+hojeISO()+".json";
   if (!window.claude){
     // fora do Claude (site próprio ou arquivo aberto no navegador): download direto
@@ -1850,7 +1861,7 @@ function abrirNovoSemestre(){
 function abrirBackup(){
   const frm = $("#frm");
   frm.innerHTML = `<h2>Backup dos seus dados</h2>
-    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas, anotações, tempo de estudo e a lista de horas complementares (os arquivos dos certificados não vão no backup). Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
+    <p class="need">Baixe um arquivo com matérias, cronograma, faltas, notas, tarefas, anotações, tempo de estudo e horas complementares, com os certificados anexados (o arquivo fica maior se houver muitos). Guarde no seu computador ou Drive. Para restaurar, importe o arquivo aqui.</p>
     <button type="button" class="primary" id="bkDown">Baixar backup (.json)</button>
     <div class="field"><label for="bkFile">Importar backup</label>
       <input type="file" id="bkFile" class="sr" accept=".json,application/json">
@@ -1872,8 +1883,13 @@ function abrirBackup(){
       let n = 0;
       for (const c of COLS) for (const {id, ...x} of (d[c]||[])) { if (await salvar(c, id, x)) n++; }
       if (d.config) await salvarConfig(d.config);
+      let nArq = 0;
+      for (const a of (d.arquivos || [])){
+        try { const bin = atob(a.dados), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+          await arq("put", a.chave, new File([u], a.nome, { type:a.tipo || "" })); nArq++; } catch(_){}
+      }
       marcarBackup(); render();
-      $("#dlg").close(); toast(n+" itens importados");
+      $("#dlg").close(); toast(n+" itens importados" + (nArq ? ` e ${nArq} ${nArq > 1 ? "certificados" : "certificado"}` : ""));
     };
     rd.readAsText(f);
   };
