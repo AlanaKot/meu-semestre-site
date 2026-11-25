@@ -1145,8 +1145,10 @@ function vCronograma(){
     </div>`; }).join("")}</div>`;
 }
 
-let filtroProvas = "";
+let filtroProvas = "", modoProvas = "reais";
+const seletorModo = () => `<div class="seg cheia" role="group" aria-label="Modo"><button data-modo="reais" aria-pressed="${modoProvas==="reais"}">Notas reais</button><button data-modo="sim" aria-pressed="${modoProvas==="sim"}">Simulação</button></div>`;
 function vProvas(){
+  if (modoProvas === "sim") return vSimulacao();
   const lista = S.provas.filter(p => !filtroProvas || p.materiaId === filtroProvas)
     .sort((a,b) => (a.data||"9").localeCompare(b.data||"9"));
   const futuras = lista.filter(p => num(p.nota) == null), feitas = lista.filter(p => num(p.nota) != null).reverse();
@@ -1164,10 +1166,10 @@ function vProvas(){
     return `<div class="row"><span class="dot" style="background:${esc(m.cor)}"></span>
       <div class="grow"><div class="t">${esc(m.nome)}</div>${sub ? `<div class="m">${sub}</div>` : ""}</div>${chipMedia(r.media)}</div>`; }).join("");
   return `${avisoExemplo()}
-  <div class="bar">
+  ${seletorModo()}
+  <div class="bar" style="margin-top:12px">
     <div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select>
     ${botaoAgenda()}
-    <button data-acao="simular">Simular nota</button>
     <button class="primary" data-novo="provas">+ Prova ou trabalho</button></div></div>
   ${cards?`<section class="panel" style="margin-bottom:26px"><h3>Médias</h3><div class="list">${cards}</div></section>`:""}
   <div class="grid2">
@@ -1774,49 +1776,97 @@ function abrirFaltei(){
   $("#dlg").showModal();
 }
 
-// Simulador de nota: testa notas imaginárias sem salvar nada.
-function abrirSimulador(materiaId){
-  if (!S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
-  let mid = mat(materiaId) ? materiaId : mat(filtroProvas) ? filtroProvas : (S.materias.find(m => S.provas.some(p => p.materiaId === m.id)) || S.materias[0]).id;
-  const frm = $("#frm");
-  const desenhar = () => {
-    const its = S.provas.filter(p => p.materiaId === mid).sort((a,b) => (a.data||"9").localeCompare(b.data||"9"));
-    frm.innerHTML = `<h2>Simular nota</h2>
-      <p class="need">Digite notas de mentira para ver como fica sua média. Nada aqui é salvo.</p>
-      <div class="field"><label for="simMat">Matéria</label><select id="simMat">${S.materias.map(m => `<option value="${m.id}" ${m.id===mid?"selected":""}>${esc(m.nome)}</option>`).join("")}</select></div>
-      ${its.length ? `<div class="faltei">${its.map(p => { const n = num(p.nota), mx = num(p.notaMax) || 10; return `<div class="row">
-        <div class="grow"><div class="t">${esc(p.titulo)}</div><div class="m">${rotProva(p.tipo)} · peso ${fmt(num(p.peso)??1)} · ${n!=null?"nota real "+fmt(n):"sem nota"}</div></div>
-        <input class="qtd" data-sim="${p.id}" inputmode="decimal" value="${n!=null?esc(fmt(n)):""}" placeholder="?" aria-label="Nota em ${esc(p.titulo)} (de 0 a ${fmt(mx)})">
-        <span class="need">/${fmt(mx)}</span></div>`; }).join("")}</div>
-        <div class="panel" id="simRes" aria-live="polite"></div>`
-      : '<p class="empty">Esta matéria ainda não tem provas ou trabalhos. Cadastre na aba Provas para simular.</p>'}
-      <div class="actions">${its.length?'<button type="button" class="ghost" id="simLimpa">Voltar às notas reais</button>':"<span></span>"}<div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
-    $("#cancel").onclick = () => $("#dlg").close();
-    $("#simMat").onchange = e => { mid = e.target.value; desenhar(); };
-    if (!its.length) return;
-    const calcular = () => {
-      let erro = "";
-      const sim = its.map(p => { const el = frm.querySelector(`[data-sim="${p.id}"]`), mx = num(p.notaMax) || 10, raw = el.value.trim(), n = num(raw);
-        const ruim = raw !== "" && (n == null || n < 0 || n > mx);
-        el.setAttribute("aria-invalid", ruim); if (ruim && !erro) erro = `${p.titulo}: use um número de 0 a ${fmt(mx)}.`;
-        return { ...p, nota: ruim ? null : n }; });
-      const r = calcNotas(sim), min = S.config.mediaMin;
-      const frase = r.media == null ? "Preencha pelo menos uma nota."
-        : r.resta === 0 ? (r.media >= min ? `Passa por nota: média final ${fmt(r.media)}.` : `Abaixo da média mínima de ${fmt(min)}: faltariam ${fmt(min - r.media)} pontos.`)
-        : r.precisa <= 0 ? "A média mínima já está garantida, mesmo tirando 0 no que falta."
-        : r.precisa > 10 ? "Com essas notas, não dá para chegar na média mínima."
-        : `Para fechar com ${fmt(min)}, você precisa de <b class="num">${fmt(r.precisa)}</b> (de 10) em média no que ficou em branco.`;
-      $("#simRes").innerHTML = `<div class="bar" style="margin:0"><div><div class="label">Média ${r.resta ? "até agora" : "final"}</div>${chipMedia(r.media)}</div><div class="need" style="flex:1 1 200px">${frase}</div></div>
-        ${erro ? `<p class="erro" role="alert" style="margin-top:8px">${esc(erro)}</p>` : ""}`;
-    };
-    frm.oninput = e => { if (e.target.dataset.sim) calcular(); };
-    $("#simLimpa").onclick = desenhar;
-    calcular();
-  };
-  frm.onsubmit = e => e.preventDefault();
-  frm.oninput = null;
-  desenhar();
-  $("#dlg").showModal();
+/* ---------- simulação de notas ---------- */
+// Aba Provas > Simulação: uma cópia de mentira das avaliações de cada matéria (nome, peso, nota).
+// Fica guardada em S.config.simulacao e nunca mexe nas notas reais.
+const n1 = v => String(v).replace(".", ",");
+const dadosSim = id => { const d = S.config.simulacao?.[id] || {}; return { meta: d.meta || "", itens: d.itens || [] }; };
+function resultadoSim(d){
+  let erro = "";
+  const lista = d.itens.map(x => {
+    const p = num(x.peso), n = num(x.nota), nome = x.titulo || "Avaliação";
+    if (String(x.peso).trim() !== "" && (p == null || p <= 0) && !erro) erro = `${nome}: o peso precisa ser um número maior que 0.`;
+    if (String(x.nota).trim() !== "" && (n == null || n < 0 || n > 10) && !erro) erro = `${nome}: a nota vai de 0 a 10.`;
+    return { peso: p > 0 ? p : 1, nota: n != null && n >= 0 && n <= 10 ? n : null };
+  });
+  const alvoTxt = String(d.meta).trim(), alvo = alvoTxt === "" ? S.config.mediaMin : num(alvoTxt);
+  if ((alvo == null || alvo < 0 || alvo > 10) && !erro) erro = "A média que você quer fechar vai de 0 a 10.";
+  const meta = alvo != null && alvo >= 0 && alvo <= 10 ? alvo : S.config.mediaMin;
+  const pesoTotal = lista.reduce((a, x) => a + x.peso, 0);
+  const feitas = lista.filter(x => x.nota != null), pesoFeito = feitas.reduce((a, x) => a + x.peso, 0);
+  const soma = feitas.reduce((a, x) => a + x.nota * x.peso, 0), resta = pesoTotal - pesoFeito;
+  const media = pesoFeito ? soma / pesoFeito : null, precisa = resta > 0 ? (meta * pesoTotal - soma) / resta : null;
+  const frase = !lista.length ? "Adicione as avaliações da matéria."
+    : media == null ? "Preencha pelo menos uma nota."
+    : resta === 0 ? (media >= meta ? `Chega lá: média final ${fmt(media)}.` : `Abaixo de ${fmt(meta)}: faltariam ${fmt(meta - media)} pontos.`)
+    : precisa <= 0 ? `A média ${fmt(meta)} já está garantida, mesmo tirando 0 no que falta.`
+    : precisa > 10 ? `Com essas notas, não dá para chegar em ${fmt(meta)}.`
+    : `Para fechar com ${fmt(meta)}, você precisa de <b class="num">${fmt(precisa)}</b> (de 10) em média no que ficou em branco.`;
+  const exame = !erro && lista.length && resta === 0 && media != null && media < S.config.mediaMin ? textoExame({ n: lista.length, resta: 0, media }) : "";
+  return `<div class="bar" style="margin:0"><div><div class="label">Média ${resta ? "até agora" : "final"}</div>${chipMedia(media)}</div><div class="need" style="flex:1 1 200px">${frase}${exame ? "<br>" + exame : ""}</div></div>
+    ${erro ? `<p class="erro" role="alert" style="margin-top:8px">${esc(erro)}</p>` : ""}`;
+}
+function vSimulacao(){
+  const cards = S.materias.filter(m => !filtroProvas || m.id === filtroProvas).map(m => { const d = dadosSim(m.id);
+    return `<section class="panel"><h3><span class="dot" style="background:${esc(m.cor)}"></span> ${esc(m.nome)}</h3>
+      ${d.itens.length ? `<div class="faltei">
+        <div class="row"><div class="grow need">Avaliação</div><span class="need" style="width:64px;text-align:center">Peso</span><span class="need" style="width:64px;text-align:center">Nota</span><span style="width:30px"></span></div>
+        ${d.itens.map(x => `<div class="row">
+          <div class="grow"><input data-sm="${m.id}" data-sx="${x.id}" data-sc="titulo" value="${esc(x.titulo)}" placeholder="Nome (ex.: P1)" aria-label="Nome da avaliação" style="width:100%;background:var(--fill)"></div>
+          <input class="qtd" data-sm="${m.id}" data-sx="${x.id}" data-sc="peso" inputmode="decimal" value="${esc(x.peso)}" aria-label="Peso de ${esc(x.titulo)}">
+          <input class="qtd" data-sm="${m.id}" data-sx="${x.id}" data-sc="nota" inputmode="decimal" value="${esc(x.nota)}" placeholder="?" aria-label="Nota em ${esc(x.titulo)} (de 0 a 10)">
+          <button type="button" class="ghost" data-sacao="del" data-sm="${m.id}" data-sx="${x.id}" aria-label="Remover ${esc(x.titulo)}" style="width:30px;padding:0">✕</button></div>`).join("")}
+      </div>` : '<p class="empty">Nenhuma avaliação aqui. Adicione as provas da matéria ou copie as notas reais.</p>'}
+      <div class="field"><label for="meta_${m.id}">Média que quero fechar (padrão: ${esc(fmt(S.config.mediaMin))})</label><input id="meta_${m.id}" data-sm="${m.id}" data-sc="meta" inputmode="decimal" value="${esc(d.meta)}" placeholder="${esc(fmt(S.config.mediaMin))}"></div>
+      <div class="panel" id="simRes_${m.id}" aria-live="polite">${resultadoSim(d)}</div>
+      <div class="bar"><button type="button" data-sacao="add" data-sm="${m.id}">+ Avaliação</button>
+        <div class="filter"><button type="button" class="ghost" data-sacao="copy" data-sm="${m.id}">Copiar notas reais</button>${d.itens.length ? `<button type="button" class="ghost" data-sacao="limpar" data-sm="${m.id}">Limpar</button>` : ""}</div></div>
+    </section>`; }).join("");
+  return `${avisoExemplo()}
+  ${seletorModo()}
+  <p class="need" style="margin:10px 4px 14px">Aqui você testa notas de mentira. Fica salvo, mas não muda suas notas reais.</p>
+  <div class="bar"><div class="filter"><label class="label" for="fProva">Matéria</label><select id="fProva"><option value="">Todas</option>${S.materias.map(m=>`<option value="${m.id}" ${m.id===filtroProvas?"selected":""}>${esc(m.nome)}</option>`).join("")}</select></div></div>
+  ${cards || '<p class="empty">Cadastre uma matéria primeiro.</p>'}`;
+}
+// muda a simulação de uma matéria; "redesenhar" refaz a tela (adicionar, apagar, copiar), senão só guarda
+let tSim = null;
+function guardarSim(){
+  if (!db) S.config._t = Date.now();
+  clearTimeout(tSim);
+  tSim = setTimeout(guardarSimJa, 300);
+}
+function guardarSimJa(){
+  if (tSim == null) return; clearTimeout(tSim); tSim = null;
+  if (db) db.doc("config/geral").set(S.config).catch(() => {}); else saveLocal();
+}
+window.addEventListener("pagehide", guardarSimJa);
+function mudarSim(mid, fn, redesenhar){
+  const d = dadosSim(mid), novo = { meta: d.meta, itens: d.itens.map(x => ({ ...x })) };
+  fn(novo);
+  S.config = { ...S.config, simulacao: { ...(S.config.simulacao || {}), [mid]: novo } };
+  if (redesenhar) salvarConfig(S.config); else guardarSim();
+  return novo;
+}
+$("#view").addEventListener("input", e => {
+  const el = e.target, mid = el.dataset?.sm, campo = el.dataset?.sc; if (!mid || !campo) return;
+  const d = mudarSim(mid, n => { if (campo === "meta") n.meta = el.value; else { const x = n.itens.find(i => i.id === el.dataset.sx); if (x) x[campo] = el.value; } }, false);
+  const r = $("#simRes_" + mid); if (r) r.innerHTML = resultadoSim(d);
+});
+function acaoSim(b){
+  const mid = b.dataset.sm, a = b.dataset.sacao;
+  if (a === "add") mudarSim(mid, d => d.itens.push({ id: uid(), titulo: "Prova " + (d.itens.length + 1), peso: "1", nota: "" }), true);
+  else if (a === "del") mudarSim(mid, d => { d.itens = d.itens.filter(x => x.id !== b.dataset.sx); }, true);
+  else if (a === "limpar" || a === "copy"){
+    if (dadosSim(mid).itens.length && !b.dataset.arm){ b.dataset.arm = 1; const t = b.textContent; b.textContent = a === "copy" ? "Confirmar: troca a simulação" : "Confirmar: limpar";
+      setTimeout(() => { if (b.isConnected){ delete b.dataset.arm; b.textContent = t; } }, 3500); return; }
+    if (a === "limpar") mudarSim(mid, d => { d.itens = []; d.meta = ""; }, true);
+    else {
+      const reais = S.provas.filter(p => p.materiaId === mid).sort((x, y) => (x.data || "9").localeCompare(y.data || "9"));
+      if (!reais.length){ toast("Esta matéria ainda não tem provas cadastradas."); return; }
+      mudarSim(mid, d => { d.itens = reais.map(p => { const n = num(p.nota), mx = num(p.notaMax) || 10;
+        return { id: uid(), titulo: p.titulo, peso: n1(num(p.peso) ?? 1), nota: n != null ? n1(Math.round(n / mx * 100) / 10) : "" }; }); }, true);
+    }
+  }
 }
 
 // Baixa o backup. Devolve true quando o arquivo foi entregue.
@@ -2264,7 +2314,8 @@ $("#view").addEventListener("click", async e => {
   else if (b.dataset.acao?.startsWith("foco")) acaoFoco(b.dataset.acao);
   else if (b.dataset.hist) apagarHistorico(b);
   else if (b.dataset.acao==="notas") abrirNotas(b.dataset.id);
-  else if (b.dataset.acao==="simular") abrirSimulador(b.dataset.mat);
+  else if (b.dataset.modo){ modoProvas = b.dataset.modo; render(); }
+  else if (b.dataset.sacao) acaoSim(b);
   else if (b.id==="limparEx"){
     if (!b.dataset.arm){ b.dataset.arm=1; b.textContent="Confirmar: apagar exemplos"; return; }
     b.disabled = true;
