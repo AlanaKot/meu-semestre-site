@@ -1775,46 +1775,84 @@ function abrirFaltei(){
 }
 
 // Simulador de nota: testa notas imaginárias sem salvar nada.
+// Dá para mudar o peso, acrescentar avaliações que ainda não estão cadastradas (só na simulação)
+// e escolher a média que se quer fechar.
 function abrirSimulador(materiaId){
   if (!S.materias.length){ toast("Cadastre uma matéria primeiro."); location.hash="#materias"; return; }
   let mid = mat(materiaId) ? materiaId : mat(filtroProvas) ? filtroProvas : (S.materias.find(m => S.provas.some(p => p.materiaId === m.id)) || S.materias[0]).id;
+  const ed = {};      // valores digitados nas avaliações cadastradas: { id: { nota, peso } }
+  const extras = {};  // avaliações inventadas só aqui, por matéria: { materiaId: [{ id, titulo, peso, nota }] }
+  let meta = "";      // média que a pessoa quer fechar (vazio = média mínima das configurações)
   const frm = $("#frm");
   const desenhar = () => {
     const its = S.provas.filter(p => p.materiaId === mid).sort((a,b) => (a.data||"9").localeCompare(b.data||"9"));
+    const ex = extras[mid] = extras[mid] || [];
+    const val = (p, k) => ed[p.id]?.[k] ?? (k === "nota" ? (num(p.nota) != null ? fmt(num(p.nota)) : "") : fmt(num(p.peso) ?? 1));
     frm.innerHTML = `<h2>Simular nota</h2>
-      <p class="need">Digite notas de mentira para ver como fica sua média. Nada aqui é salvo.</p>
+      <p class="need">Digite notas de mentira para ver como fica sua média. Nada aqui é salvo. Deixe a nota em branco no que ainda vai fazer.</p>
       <div class="field"><label for="simMat">Matéria</label><select id="simMat">${S.materias.map(m => `<option value="${m.id}" ${m.id===mid?"selected":""}>${esc(m.nome)}</option>`).join("")}</select></div>
-      ${its.length ? `<div class="faltei">${its.map(p => { const n = num(p.nota), mx = num(p.notaMax) || 10; return `<div class="row">
-        <div class="grow"><div class="t">${esc(p.titulo)}</div><div class="m">${rotProva(p.tipo)} · peso ${fmt(num(p.peso)??1)} · ${n!=null?"nota real "+fmt(n):"sem nota"}</div></div>
-        <input class="qtd" data-sim="${p.id}" inputmode="decimal" value="${n!=null?esc(fmt(n)):""}" placeholder="?" aria-label="Nota em ${esc(p.titulo)} (de 0 a ${fmt(mx)})">
-        <span class="need">/${fmt(mx)}</span></div>`; }).join("")}</div>
-        <div class="panel" id="simRes" aria-live="polite"></div>`
-      : '<p class="empty">Esta matéria ainda não tem provas ou trabalhos. Cadastre na aba Provas para simular.</p>'}
-      <div class="actions">${its.length?'<button type="button" class="ghost" id="simLimpa">Voltar às notas reais</button>':"<span></span>"}<div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
+      <div class="field"><label for="simMeta">Média que quero fechar (padrão: ${esc(fmt(S.config.mediaMin))})</label><input id="simMeta" inputmode="decimal" value="${esc(meta)}" placeholder="${esc(fmt(S.config.mediaMin))}"></div>
+      <div class="faltei">
+        <div class="row"><div class="grow need">Avaliação</div><span class="need" style="width:64px;text-align:center">Peso</span><span class="need" style="width:64px;text-align:center">Nota</span><span style="width:30px"></span></div>
+        ${its.map(p => { const mx = num(p.notaMax) || 10; return `<div class="row">
+          <div class="grow"><div class="t">${esc(p.titulo)}</div><div class="m">${rotProva(p.tipo)}${p.data ? " · "+fmtData(p.data) : ""}</div></div>
+          <input class="qtd" data-peso="${p.id}" inputmode="decimal" value="${esc(val(p,"peso"))}" aria-label="Peso de ${esc(p.titulo)}">
+          <input class="qtd" data-sim="${p.id}" inputmode="decimal" value="${esc(val(p,"nota"))}" placeholder="?" aria-label="Nota em ${esc(p.titulo)} (de 0 a ${fmt(mx)})">
+          <span class="need" style="width:30px">/${fmt(mx)}</span></div>`; }).join("")}
+        ${ex.map(x => `<div class="row">
+          <div class="grow"><input data-xt="${x.id}" value="${esc(x.titulo)}" placeholder="Nome (ex.: P1)" aria-label="Nome da avaliação" style="width:100%;background:var(--fill)"></div>
+          <input class="qtd" data-xp="${x.id}" inputmode="decimal" value="${esc(x.peso)}" aria-label="Peso de ${esc(x.titulo)}">
+          <input class="qtd" data-xn="${x.id}" inputmode="decimal" value="${esc(x.nota)}" placeholder="?" aria-label="Nota em ${esc(x.titulo)} (de 0 a 10)">
+          <button type="button" class="ghost" data-xdel="${x.id}" aria-label="Remover ${esc(x.titulo)}" style="width:30px;padding:0">✕</button></div>`).join("")}
+      </div>
+      ${!its.length && !ex.length ? '<p class="need" style="margin-top:8px">Nenhuma avaliação cadastrada nesta matéria. Adicione abaixo as que existem (as que já fez e as que faltam).</p>' : ""}
+      <div class="actions"><button type="button" id="simAdd">+ Adicionar avaliação</button><span></span></div>
+      <div class="panel" id="simRes" aria-live="polite"></div>
+      <div class="actions"><button type="button" class="ghost" id="simLimpa">Voltar às notas reais</button><div class="r"><button type="button" id="cancel">Fechar</button></div></div>`;
     $("#cancel").onclick = () => $("#dlg").close();
     $("#simMat").onchange = e => { mid = e.target.value; desenhar(); };
-    if (!its.length) return;
+    $("#simAdd").onclick = () => { ex.push({ id: uid(), titulo: "Prova " + (its.length + ex.length + 1), peso: "1", nota: "" }); desenhar(); };
+    $("#simLimpa").onclick = () => { Object.keys(ed).forEach(k => delete ed[k]); extras[mid] = []; meta = ""; desenhar(); };
+    frm.onclick = e => { const b = e.target.closest("[data-xdel]"); if (b){ extras[mid] = ex.filter(x => x.id !== b.dataset.xdel); desenhar(); } };
     const calcular = () => {
       let erro = "";
-      const sim = its.map(p => { const el = frm.querySelector(`[data-sim="${p.id}"]`), mx = num(p.notaMax) || 10, raw = el.value.trim(), n = num(raw);
-        const ruim = raw !== "" && (n == null || n < 0 || n > mx);
-        el.setAttribute("aria-invalid", ruim); if (ruim && !erro) erro = `${p.titulo}: use um número de 0 a ${fmt(mx)}.`;
-        return { ...p, nota: ruim ? null : n }; });
-      const r = calcNotas(sim), min = S.config.mediaMin;
-      const frase = r.media == null ? "Preencha pelo menos uma nota."
-        : r.resta === 0 ? (r.media >= min ? `Passa por nota: média final ${fmt(r.media)}.` : `Abaixo da média mínima de ${fmt(min)}: faltariam ${fmt(min - r.media)} pontos.`)
-        : r.precisa <= 0 ? "A média mínima já está garantida, mesmo tirando 0 no que falta."
-        : r.precisa > 10 ? "Com essas notas, não dá para chegar na média mínima."
-        : `Para fechar com ${fmt(min)}, você precisa de <b class="num">${fmt(r.precisa)}</b> (de 10) em média no que ficou em branco.`;
-      $("#simRes").innerHTML = `<div class="bar" style="margin:0"><div><div class="label">Média ${r.resta ? "até agora" : "final"}</div>${chipMedia(r.media)}</div><div class="need" style="flex:1 1 200px">${frase}</div></div>
+      const checa = (el, nome, max, vazioOk) => { const raw = el.value.trim(), n = num(raw);
+        const ruim = raw !== "" ? (n == null || n < 0 || n > max) : !vazioOk;
+        el.setAttribute("aria-invalid", ruim); if (ruim && !erro) erro = `${nome}: use um número de 0 a ${fmt(max)}.`;
+        return ruim ? null : n; };
+      const lista = [];
+      its.forEach(p => { const mx = num(p.notaMax) || 10, nome = p.titulo;
+        const peso = checa(frm.querySelector(`[data-peso="${p.id}"]`), "Peso de "+nome, 1000, false);
+        const nota = checa(frm.querySelector(`[data-sim="${p.id}"]`), nome, mx, true);
+        ed[p.id] = { nota: frm.querySelector(`[data-sim="${p.id}"]`).value, peso: frm.querySelector(`[data-peso="${p.id}"]`).value };
+        lista.push({ peso: peso ?? 1, nota, notaMax: mx }); });
+      ex.forEach(x => { const t = frm.querySelector(`[data-xt="${x.id}"]`).value, nome = t || "Avaliação";
+        const pe = frm.querySelector(`[data-xp="${x.id}"]`), no = frm.querySelector(`[data-xn="${x.id}"]`);
+        x.titulo = t; x.peso = pe.value; x.nota = no.value;
+        lista.push({ peso: checa(pe, "Peso de "+nome, 1000, false) ?? 1, nota: checa(no, nome, 10, true), notaMax: 10 }); });
+      const mEl = $("#simMeta"), mRaw = mEl.value.trim(); meta = mRaw;
+      const alvo = mRaw === "" ? S.config.mediaMin : num(mRaw), alvoRuim = alvo == null || alvo < 0 || alvo > 10;
+      mEl.setAttribute("aria-invalid", alvoRuim); if (alvoRuim && !erro) erro = "A média que você quer fechar precisa ficar entre 0 e 10.";
+      const useAlvo = alvoRuim ? S.config.mediaMin : alvo;
+      const r = calcNotas(lista), pesoTotal = lista.reduce((a,x) => a + x.peso, 0);
+      // calcNotas usa a média mínima das configurações; aqui recalculamos com a meta escolhida
+      const soma = r.media == null ? 0 : r.media * (pesoTotal - r.resta);
+      const precisa = r.resta > 0 ? (useAlvo * pesoTotal - soma) / r.resta : null;
+      const frase = !lista.length ? "Adicione pelo menos uma avaliação."
+        : r.media == null ? "Preencha pelo menos uma nota."
+        : r.resta === 0 ? (r.media >= useAlvo ? `Chega lá: média final ${fmt(r.media)}.` : `Abaixo de ${fmt(useAlvo)}: faltariam ${fmt(useAlvo - r.media)} pontos.`)
+        : precisa <= 0 ? `A média ${fmt(useAlvo)} já está garantida, mesmo tirando 0 no que falta.`
+        : precisa > 10 ? `Com essas notas, não dá para chegar em ${fmt(useAlvo)}.`
+        : `Para fechar com ${fmt(useAlvo)}, você precisa de <b class="num">${fmt(precisa)}</b> (de 10) em média no que ficou em branco.`;
+      const exame = !erro && r.resta === 0 && r.media != null && r.media < S.config.mediaMin ? textoExame({ n: lista.length, resta: 0, media: r.media }) : "";
+      $("#simRes").innerHTML = `<div class="bar" style="margin:0"><div><div class="label">Média ${r.resta ? "até agora" : "final"}</div>${chipMedia(r.media)}</div><div class="need" style="flex:1 1 200px">${frase}${exame ? "<br>"+exame : ""}</div></div>
         ${erro ? `<p class="erro" role="alert" style="margin-top:8px">${esc(erro)}</p>` : ""}`;
     };
-    frm.oninput = e => { if (e.target.dataset.sim) calcular(); };
-    $("#simLimpa").onclick = desenhar;
+    frm.oninput = () => { if ($("#simRes")) calcular(); };
     calcular();
   };
   frm.onsubmit = e => e.preventDefault();
-  frm.oninput = null;
+  frm.onclick = null;
   desenhar();
   $("#dlg").showModal();
 }
